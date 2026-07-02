@@ -244,6 +244,31 @@ class TestNIMHealthCache:
         assert json.loads(response.body.decode()) == cached
 
 
+class TestFAQValidation:
+    """Tests for FAQ endpoint input validation."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "manual_knowledge",
+        ['{"battery": 5}', "[1, 2, 3]", "5"],
+    )
+    async def test_rejects_invalid_manual_knowledge_shape(self, manual_knowledge):
+        response = await main.vlm_faqs(
+            title="x",
+            description="",
+            categories="[]",
+            tags="[]",
+            colors="[]",
+            locale="en-US",
+            manual_knowledge=manual_knowledge,
+        )
+
+        assert response.status_code == 400
+        assert json.loads(response.body.decode()) == {
+            "detail": "Invalid manual_knowledge."
+        }
+
+
 class TestJSONParsing:
     """Tests for JSON parsing in endpoint handlers."""
     

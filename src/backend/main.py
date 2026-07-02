@@ -314,6 +314,13 @@ async def vlm_faqs(
                 parsed_knowledge = json.loads(manual_knowledge)
             except json.JSONDecodeError:
                 logger.warning("/vlm/faqs: invalid manual_knowledge JSON, ignoring")
+            else:
+                if not isinstance(parsed_knowledge, dict) or not all(
+                    isinstance(value, str) for value in parsed_knowledge.values()
+                ):
+                    return JSONResponse(
+                        {"detail": "Invalid manual_knowledge."}, status_code=400
+                    )
 
         faqs = await asyncio.to_thread(
             _call_nemotron_generate_faqs, enriched, locale, parsed_knowledge
