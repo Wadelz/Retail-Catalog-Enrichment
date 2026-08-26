@@ -6,7 +6,7 @@
 
 </div>
 
-A GenAI-powered catalog enrichment system that transforms basic product images into comprehensive, rich catalog entries using NVIDIA Nemotron 3 Nano Omni for content analysis, Nemotron 3 Nano for intelligent prompt planning, FLUX Kontext model for generating high-quality product variations, and TRELLIS model for 3D asset generation.
+A GenAI-powered catalog enrichment system that transforms basic product images into comprehensive, rich catalog entries using NVIDIA Nemotron 3 Nano Omni for content analysis, Nemotron 3.5 Lightning for intelligent prompt planning, FLUX Kontext model for generating high-quality product variations, and TRELLIS model for 3D asset generation.
 
 ## Demo
 
@@ -56,7 +56,7 @@ A GenAI-powered catalog enrichment system that transforms basic product images i
 
 **AI Models:**
 - NVIDIA Nemotron 3 Nano Omni (omni-modal VLM)
-- NVIDIA Nemotron 3 Nano (prompt planning LLM)
+- NVIDIA Nemotron 3.5 Lightning (prompt planning LLM)
 - NVIDIA Embeddings (Policy Compliance)
 - LangChain Deep Agents SDK (product web research agent)
 - Exa API (external web search and retrieved content)
@@ -78,7 +78,7 @@ For self-hosting the NIM microservices locally, the following GPU requirements a
 | Model | Purpose | Minimum GPU | Recommended GPU |
 |-------|---------|-------------|-----------------|
 | Nemotron 3 Nano Omni | Vision-Language / Omni-Modal Analysis | 1× A100 | 1× H100 |
-| Nemotron 3 Nano | Prompt Planning (LLM) | 1× A100 | 1× H100 |
+| Nemotron 3.5 Lightning | Prompt Planning (LLM) | 1× A100 | 1× H100 |
 | nv-embedqa | Embeddings (Policy Compliance) | 1× A100 | 1× H100 |
 | FLUX Kontext Dev | Image Generation | 1× H100 | 1× H100 |
 | Microsoft TRELLIS | 3D Asset Generation | 1× L40S | 1× H100 |
@@ -141,7 +141,7 @@ Make sure you have accepted [https://huggingface.co/black-forest-labs/FLUX.1-Kon
    
    For local development, you must self-host the following NVIDIA NIM containers:
    - **Nemotron 3 Nano Omni** (omni-modal VLM)
-   - **Nemotron 3 Nano** (prompt planning LLM)
+   - **Nemotron 3.5 Lightning** (prompt planning LLM)
    - **FLUX Kontext dev** (image generation)
    - **TRELLIS** (3D asset generation)
  
@@ -154,7 +154,7 @@ Make sure you have accepted [https://huggingface.co/black-forest-labs/FLUX.1-Kon
    
    llm:
      url: "http://localhost:8002/v1"  # Your LLM NIM endpoint
-     model: "nvidia/nemotron-3-nano"
+     model: "nvidia/nemotron-3.5-lightning"
    
    flux:
      url: "http://localhost:8003/v1/infer"  # Your FLUX NIM endpoint
@@ -185,7 +185,7 @@ The frontend at `http://localhost:3000`.
 
 ### Docker Deployment (Self-Hosted NIMs)
 
-The Docker deployment includes all required self-hosted NVIDIA NIM containers (Nemotron 3 Nano Omni, Nemotron 3 Nano, FLUX, and TRELLIS). If you want to use uploaded policy PDFs in the UI, start the companion Milvus stack from `docker-compose.rag.yml` as well. The `shared/config/config.yaml` is pre-configured with the correct service URLs for Docker networking.
+The Docker deployment includes all required self-hosted NVIDIA NIM containers (Nemotron 3 Nano Omni, Nemotron 3.5 Lightning, FLUX, and TRELLIS). If you want to use uploaded policy PDFs in the UI, start the companion Milvus stack from `docker-compose.rag.yml` as well. The `shared/config/config.yaml` is pre-configured with the correct service URLs for Docker networking.
 
 For complete Docker deployment instructions, see the **[Docker Deployment Guide](docs/DOCKER.md)**.
 
@@ -247,7 +247,7 @@ For detailed API documentation with request/response examples, see **[API Docume
 
 ## License
 
-GOVERNING TERMS: The Blueprint scripts are governed by Apache License, Version 2.0, and enables use of separate open source and proprietary software governed by their respective licenses: [Nemotron-3-Nano-Omni-30B-A3B-Reasoning](https://catalog.ngc.nvidia.com/orgs/nim/teams/nvidia/containers/nemotron-3-nano-omni-30b-a3b-reasoning), [Nemotron-3-Nano](https://catalog.ngc.nvidia.com/orgs/nim/teams/nvidia/containers/nemotron-3-nano?version=1.7.0), [nv-embedqa-e5-v5](https://catalog.ngc.nvidia.com/orgs/nim/teams/nvidia/containers/nv-embedqa-e5-v5?version=latest), [FLUX.1-Kontext-Dev](https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev/blob/main/LICENSE.md), and [Microsoft TRELLIS](https://catalog.ngc.nvidia.com/orgs/nim/teams/microsoft/containers/trellis?version=1).
+GOVERNING TERMS: The Blueprint scripts are governed by Apache License, Version 2.0, and enables use of separate open source and proprietary software governed by their respective licenses: [Nemotron-3-Nano-Omni-30B-A3B-Reasoning](https://catalog.ngc.nvidia.com/orgs/nim/teams/nvidia/containers/nemotron-3-nano-omni-30b-a3b-reasoning), [Nemotron-3.5-Lightning-30B-A3B](https://catalog.ngc.nvidia.com/orgs/nim/teams/nvidia/containers/nemotron-3.5-lightning-30b-a3b?version=2.0.9), [nv-embedqa-e5-v5](https://catalog.ngc.nvidia.com/orgs/nim/teams/nvidia/containers/nv-embedqa-e5-v5?version=latest), [FLUX.1-Kontext-Dev](https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev/blob/main/LICENSE.md), and [Microsoft TRELLIS](https://catalog.ngc.nvidia.com/orgs/nim/teams/microsoft/containers/trellis?version=1).
 
 ADDITIONAL INFORMATION: 
 FLUX.1-Kontext-Dev license: [https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev/blob/main/LICENSE.md](https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev/blob/main/LICENSE.md).
