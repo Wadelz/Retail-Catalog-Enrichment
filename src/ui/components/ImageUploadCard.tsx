@@ -5,11 +5,11 @@ import { useState } from 'react';
 interface Props {
   uploadedImage: string | null;
   isUploading: boolean;
+  imageInputId: string;
   locale: string;
   localeOptions: LocaleOption[];
   isAnalyzingFields: boolean;
   isGeneratingImage: boolean;
-  onFileSelect: () => void;
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
   onLocaleChange: (value: string) => void;
@@ -20,11 +20,11 @@ interface Props {
 export function ImageUploadCard({
   uploadedImage,
   isUploading,
+  imageInputId,
   locale,
   localeOptions,
   isAnalyzingFields,
   isGeneratingImage,
-  onFileSelect,
   onDragOver,
   onDrop,
   onLocaleChange,
@@ -72,7 +72,8 @@ export function ImageUploadCard({
           </div>
         ) : uploadedImage ? (
           <>
-            <div
+            <label
+              htmlFor={imageInputId}
               className="relative rounded-lg overflow-hidden nvidia-green-border"
               style={{
                 minHeight: '400px',
@@ -82,9 +83,6 @@ export function ImageUploadCard({
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: isAnalyzingFields || isGeneratingImage ? 'default' : 'pointer',
-              }}
-              onClick={() => {
-                if (!isAnalyzingFields && !isGeneratingImage) onFileSelect();
               }}
               onMouseEnter={() => setIsImageHovered(true)}
               onMouseLeave={() => setIsImageHovered(false)}
@@ -123,7 +121,7 @@ export function ImageUploadCard({
                   </Text>
                 </div>
               )}
-            </div>
+            </label>
             
             <Flex gap="3" align="center">
               <Button 
@@ -170,7 +168,8 @@ export function ImageUploadCard({
 
           </>
         ) : (
-          <div 
+          <label
+            htmlFor={imageInputId}
             className="rounded-lg text-center transition-all duration-200"
             style={{
               border: isDragging 
@@ -185,22 +184,14 @@ export function ImageUploadCard({
                   : 'var(--color-surface-sunken)',
               padding: '64px',
               cursor: 'pointer',
+              display: 'block',
               transform: isDragging ? 'scale(1.01)' : 'scale(1)',
             }}
-            onClick={onFileSelect}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onFileSelect();
-              }
-            }}
             aria-label="Upload image by clicking or dragging and dropping"
           >
             <Stack gap="4" align="center">
@@ -258,7 +249,7 @@ export function ImageUploadCard({
                 </Text>
               </Stack>
             </Stack>
-          </div>
+          </label>
         )}
       </Stack>
     </Card>

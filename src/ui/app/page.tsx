@@ -113,12 +113,21 @@ function Home() {
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      const img = new window.Image();
-      img.onload = () => {
+      const preview = e.target?.result;
+      if (typeof preview !== 'string') {
+        setUploadedFile(null);
         setIsUploading(false);
-      };
-      img.src = e.target?.result as string;
-      setUploadedImage(e.target?.result as string);
+        alert('Unable to read the selected image. Please try another PNG, JPG, or JPEG file.');
+        return;
+      }
+
+      setUploadedImage(preview);
+      setIsUploading(false);
+    };
+    reader.onerror = () => {
+      setUploadedFile(null);
+      setIsUploading(false);
+      alert('Unable to read the selected image. Please try another PNG, JPG, or JPEG file.');
     };
     reader.readAsDataURL(file);
   };
@@ -533,6 +542,7 @@ function Home() {
           <Stack gap="8">
             <input
               ref={fileInputRef}
+              id="product-image-upload"
               type="file"
               accept="image/png,image/jpeg,image/jpg"
               onChange={(e) => {
@@ -540,7 +550,17 @@ function Home() {
                 if (file) handleFileUpload(file);
                 if (fileInputRef.current) fileInputRef.current.value = '';
               }}
-              style={{ display: 'none' }}
+              style={{
+                position: 'absolute',
+                width: '1px',
+                height: '1px',
+                padding: 0,
+                margin: '-1px',
+                overflow: 'hidden',
+                clip: 'rect(0, 0, 0, 0)',
+                whiteSpace: 'nowrap',
+                border: 0,
+              }}
             />
             <input
               ref={policyFileInputRef}
@@ -566,11 +586,11 @@ function Home() {
               <ImageUploadCard
                 uploadedImage={uploadedImage}
                 isUploading={isUploading}
+                imageInputId="product-image-upload"
                 locale={locale}
                 localeOptions={SUPPORTED_LOCALES}
                 isAnalyzingFields={isAnalyzingFields}
                 isGeneratingImage={isGeneratingImage}
-                onFileSelect={() => fileInputRef.current?.click()}
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
                 onLocaleChange={setLocale}

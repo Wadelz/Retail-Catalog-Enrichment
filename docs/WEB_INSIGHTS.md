@@ -2,7 +2,7 @@
 
 This document describes the proposed product web research feature for Catalog Enrichment.
 
-The feature adds a backend research endpoint and a new frontend tab that summarize public web information about a product. It uses the Deep Agents SDK from LangChain as the agent harness, Nemotron 3 Nano as the LLM, and Exa as the initial external search provider.
+The feature adds a backend research endpoint and a new frontend tab that summarize public web information about a product. It uses the Deep Agents SDK from LangChain as the agent harness, Nemotron 3.5 Lightning as the LLM, and Exa as the initial external search provider.
 
 ## Goal
 
@@ -34,7 +34,7 @@ flowchart LR
   Analyze --> Fields["Enriched product fields"]
   Fields --> Insights["POST /research/product-insights"]
   Insights --> Agent["Deep Agents SDK"]
-  Agent --> Nemotron["Nemotron 3 Nano LLM"]
+  Agent --> Nemotron["Nemotron 3.5 Lightning LLM"]
   Agent --> ExaTool["Exa search tool"]
   ExaTool --> Web["Public web sources"]
   Agent --> Summary["Source-backed insight summary"]
@@ -150,7 +150,7 @@ curl -X POST \
 
 Use `deepagents.create_deep_agent` with:
 
-- a configured Nemotron 3 Nano chat model
+- a configured Nemotron 3.5 Lightning chat model
 - one Exa-backed `web_search` tool for retrieval only
 - a focused system prompt that asks for product research only
 - a structured output repair/validation layer before returning API JSON

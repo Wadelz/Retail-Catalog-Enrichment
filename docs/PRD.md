@@ -170,7 +170,7 @@ A GenAI-powered catalog enrichment system that transforms basic product images i
 ### FR-14: Product Web Insights
 - Generate a source-backed product research summary from the enriched product title
 - Use LangChain Deep Agents SDK as the research agent harness
-- Use NVIDIA Nemotron 3 Nano LLM as the agent model through the existing LLM configuration
+- Use NVIDIA Nemotron 3.5 Lightning as the agent model through the existing LLM configuration
 - Use Exa as the initial external web search API provider
 - Search for product and brand information including pros, cons, customer feedback, real-world usage, and purchase considerations
 - Return grouped insight sections: summary, pros, cons, use cases, customer insights, purchase considerations, search queries, sources, and warnings
@@ -219,7 +219,7 @@ A GenAI-powered catalog enrichment system that transforms basic product images i
 
 ### TR-6: Product Web Research Agent
 - Add `deepagents`, LangChain chat model integration dependencies, and `exa-py`
-- Configure the agent with Nemotron 3 Nano and an Exa-backed search tool
+- Configure the agent with Nemotron 3.5 Lightning and an Exa-backed search tool
 - Use concise Exa highlights for normal operation, with deeper search modes only when source coverage is low
 - Validate and repair agent output into the API response schema before returning it to clients
 - Enforce source attribution for market claims and user-visible insight bullets

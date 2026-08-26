@@ -89,15 +89,21 @@ services:
 
   # LLM Model
   llm-nim:
-    image: nvcr.io/nim/nvidia/nemotron-3-nano:1.7.0
+    image: nvcr.io/nim/nvidia/nemotron-3.5-lightning-30b-a3b:2.0.9-variant
     container_name: nim-llm
     ports:
       - "8002:8000"
     environment:
       - NGC_API_KEY=${NGC_API_KEY}
+      # Enables OpenAI-compatible automatic tool calls for NAT agents.
+      - NIM_PASSTHROUGH_ARGS=--reasoning-parser nemotron_v3 --enable-auto-tool-choice --tool-call-parser qwen3_coder
+      - NIM_MODEL_NAME=nvidia/nemotron-3.5-lightning
+      - NIM_SERVED_MODEL_NAME=nvidia/nemotron-3.5-lightning
     volumes:
       - ${LOCAL_NIM_CACHE:-~/.cache/nim}:/opt/nim/.cache
-    shm_size: "16gb"
+    user: "${UID:-1000}"
+    ipc: host
+    shm_size: "32gb"
     deploy:
       resources:
         reservations:
@@ -110,6 +116,12 @@ services:
     tty: true
     networks:
       - catalog-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
   # NVIDIA NIM - Embedding Model
   embedqa:

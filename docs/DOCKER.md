@@ -9,7 +9,7 @@ The application consists of the following services:
 - **Frontend** (Port 3000): Next.js UI for product catalog enrichment
 - **Backend** (Port 8000): FastAPI backend for orchestrating enrichment workflows
 - **Nemotron 3 Nano Omni VLM NIM** (Port 8001): Omni-modal model for image analysis
-- **Nemotron 3 Nano LLM NIM** (Port 8002): Large Language Model for text generation
+- **Nemotron 3.5 Lightning LLM NIM** (Port 8002): Large Language Model for text generation
 - **Flux NIM** (Port 8003): Image generation model for product variations
 - **Trellis NIM** (Port 8004): 3D asset generation model
 - **Embeddings NIM** (Post 8005): Embeddings for policy compliance
@@ -141,7 +141,7 @@ Once all services are running:
 The default configuration assigns one GPU to each NIM model:
 
 - Nemotron 3 Nano Omni VLM: GPU 0
-- Nemotron 3 Nano LLM: GPU 1
+- Nemotron 3.5 Lightning LLM: GPU 1
 - Trellis: GPU 2
 - Flux: GPU 3
 
