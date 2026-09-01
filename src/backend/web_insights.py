@@ -25,7 +25,7 @@ from langchain_openai import ChatOpenAI
 
 from backend.config import get_config
 from backend.utils import parse_llm_json
-from backend.vlm import LOCALE_CONFIG, NGC_API_KEY_NOT_SET_ERROR
+from backend.enrich import LOCALE_CONFIG, NGC_API_KEY_NOT_SET_ERROR
 
 logger = logging.getLogger("catalog_enrichment.web_insights")
 

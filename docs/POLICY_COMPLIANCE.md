@@ -8,7 +8,7 @@ The policy compliance system is a persistent RAG (Retrieval-Augmented Generation
 
 **Key characteristics:**
 - **Persistent** -- Uploaded policies remain loaded across product analyses until explicitly cleared
-- **Automatic** -- Once policies are loaded, every call to `/vlm/analyze` includes a compliance check
+- **Automatic** -- Once policies are loaded, every call to `/enrich` includes a compliance check
 - **Shared** -- Policies apply to all products equally (they are not per-product)
 
 ## How It Works
@@ -40,9 +40,9 @@ Duplicate uploads are detected by SHA-256 content hash and skipped.
 
 ### Step 2: Automatic Retrieval During Analysis
 
-When you call `POST /vlm/analyze` and policies are loaded, the system automatically:
+When you call `POST /enrich` and policies are loaded, the system automatically:
 
-1. **Builds a retrieval query** from the VLM observation (title, description, categories, tags, colors)
+1. **Builds a retrieval query** from the source observation (title, description, categories, tags, colors)
 2. **Semantic search** against the Milvus collection using cosine similarity (top-k=8, min relevance score=0.3)
 3. If no policy chunks score above the minimum relevance threshold, the product is treated as not covered by any loaded policy and receives a pass
 
@@ -51,7 +51,7 @@ When you call `POST /vlm/analyze` and policies are loaded, the system automatica
 When relevant policy chunks are retrieved, the system runs a compliance classifier:
 
 1. **Product snapshot** is assembled from:
-   - Primary evidence: VLM-observed title, description, categories, tags, colors
+   - Primary evidence: observed title, description, categories, tags, colors
    - Secondary context: generated catalog fields from the enrichment pipeline
    - User-provided product data (if any)
 2. **Policy context** is assembled from the retrieved chunks plus their parent document summaries
@@ -61,7 +61,7 @@ When relevant policy chunks are retrieved, the system runs a compliance classifi
 
 ### Decision Output
 
-The compliance decision is returned as part of the `/vlm/analyze` response:
+The compliance decision is returned as part of the `/enrich` response:
 
 ```json
 {
@@ -79,7 +79,7 @@ The compliance decision is returned as part of the `/vlm/analyze` response:
       }
     ],
     "warnings": [],
-    "evidence_note": "Decision based on the uploaded image and the generated catalog evidence."
+    "evidence_note": "Decision based on the source observation and the generated catalog evidence."
   }
 }
 ```
@@ -163,6 +163,4 @@ See [API Documentation](API.md) for full endpoint details:
 |------|---------|
 | `src/backend/policy.py` | PDF text extraction, policy normalization, compliance classification |
 | `src/backend/policy_library.py` | Persistent policy library (SQLite + Milvus), embedding, retrieval |
-| `src/backend/main.py` | `/policies` and `/vlm/analyze` endpoints |
-| `src/ui/components/AdvancedOptionsCard.tsx` | Policy upload UI |
-| `src/ui/components/FieldsCard.tsx` | Compliance result display |
+| `src/backend/main.py` | `/policies` and `/enrich` endpoints |

@@ -33,24 +33,6 @@ def _call_keyword(node, key_name):
     return next((kw.value for kw in node.keywords if kw.arg == key_name), None)
 
 
-def _uses_vlm_model(node):
-    model = _call_keyword(node, "model")
-    return (
-        isinstance(model, ast.Subscript)
-        and isinstance(model.value, ast.Name)
-        and model.value.id == "vlm_config"
-    )
-
-
-def _contains_no_think(node):
-    return any(
-        isinstance(child, ast.Constant)
-        and isinstance(child.value, str)
-        and "/no_think" in child.value
-        for child in ast.walk(node)
-    )
-
-
 def test_backend_chat_completion_calls_disable_thinking():
     failures = []
 
@@ -75,10 +57,5 @@ def test_backend_chat_completion_calls_disable_thinking():
             enable_thinking = _dict_value(chat_template_kwargs, "enable_thinking")
             if not (isinstance(enable_thinking, ast.Constant) and enable_thinking.value is False):
                 failures.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno} does not disable thinking")
-
-            if _uses_vlm_model(node):
-                messages = _call_keyword(node, "messages")
-                if messages is not None and _contains_no_think(messages):
-                    failures.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno} VL call still uses /no_think")
 
     assert failures == []

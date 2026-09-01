@@ -46,17 +46,17 @@ def sample_extracted_fields():
 class TestBuildAcpSchema:
     """Tests for the ACP schema builder."""
 
-    def test_populates_enriched_fields(self, sample_vlm_response, sample_faqs_response, sample_extracted_fields):
-        schema = _build_acp_schema(sample_vlm_response, sample_faqs_response, sample_extracted_fields)
+    def test_populates_enriched_fields(self, sample_observation, sample_faqs_response, sample_extracted_fields):
+        schema = _build_acp_schema(sample_observation, sample_faqs_response, sample_extracted_fields)
 
-        assert schema["product"]["title"] == sample_vlm_response["title"]
-        assert schema["product"]["description"] == sample_vlm_response["description"]
-        assert schema["product"]["attributes"]["colors"] == sample_vlm_response["colors"]
-        assert schema["product"]["categories"] == sample_vlm_response["categories"]
-        assert schema["product"]["tags"] == sample_vlm_response["tags"]
+        assert schema["product"]["title"] == sample_observation["title"]
+        assert schema["product"]["description"] == sample_observation["description"]
+        assert schema["product"]["attributes"]["colors"] == sample_observation["colors"]
+        assert schema["product"]["categories"] == sample_observation["categories"]
+        assert schema["product"]["tags"] == sample_observation["tags"]
 
-    def test_merges_extracted_fields(self, sample_vlm_response, sample_extracted_fields):
-        schema = _build_acp_schema(sample_vlm_response, [], sample_extracted_fields)
+    def test_merges_extracted_fields(self, sample_observation, sample_extracted_fields):
+        schema = _build_acp_schema(sample_observation, [], sample_extracted_fields)
 
         assert schema["product"]["brand"] == "Elegance Co"
         assert schema["product"]["attributes"]["material"] == "leather"
@@ -65,25 +65,25 @@ class TestBuildAcpSchema:
         assert schema["product"]["attributes"]["gender"] == "female"
         assert schema["campaigns"]["short_title"] == "Elegant Black Handbag"
 
-    def test_merges_product_details_and_highlights(self, sample_vlm_response, sample_extracted_fields):
-        schema = _build_acp_schema(sample_vlm_response, [], sample_extracted_fields)
+    def test_merges_product_details_and_highlights(self, sample_observation, sample_extracted_fields):
+        schema = _build_acp_schema(sample_observation, [], sample_extracted_fields)
 
         assert len(schema["product"]["details"]) == 2
         assert schema["product"]["details"][0]["attribute_name"] == "Closure Type"
         assert len(schema["product"]["highlights"]) == 3
 
-    def test_includes_faqs(self, sample_vlm_response, sample_faqs_response, sample_extracted_fields):
-        schema = _build_acp_schema(sample_vlm_response, sample_faqs_response, sample_extracted_fields)
+    def test_includes_faqs(self, sample_observation, sample_faqs_response, sample_extracted_fields):
+        schema = _build_acp_schema(sample_observation, sample_faqs_response, sample_extracted_fields)
 
         assert len(schema["faqs"]) == len(sample_faqs_response)
         assert schema["faqs"][0]["question"] == sample_faqs_response[0]["question"]
 
-    def test_empty_faqs(self, sample_vlm_response):
-        schema = _build_acp_schema(sample_vlm_response, [], {})
+    def test_empty_faqs(self, sample_observation):
+        schema = _build_acp_schema(sample_observation, [], {})
         assert schema["faqs"] == []
 
-    def test_agent_actions_defaults(self, sample_vlm_response):
-        schema = _build_acp_schema(sample_vlm_response, [], {})
+    def test_agent_actions_defaults(self, sample_observation):
+        schema = _build_acp_schema(sample_observation, [], {})
 
         assert schema["agent_actions"]["discoverable"] is True
         assert schema["agent_actions"]["buyable"] is True
@@ -91,21 +91,21 @@ class TestBuildAcpSchema:
         assert schema["agent_actions"]["comparable"] is True
         assert schema["agent_actions"]["subscribable"] is False
 
-    def test_deterministic_defaults(self, sample_vlm_response):
-        schema = _build_acp_schema(sample_vlm_response, [], {})
+    def test_deterministic_defaults(self, sample_observation):
+        schema = _build_acp_schema(sample_observation, [], {})
 
         assert schema["pricing"]["availability"] == "in_stock"
         assert schema["bundling"]["is_bundle"] is False
 
-    def test_empty_extracted_falls_back(self, sample_vlm_response):
-        schema = _build_acp_schema(sample_vlm_response, [], {})
+    def test_empty_extracted_falls_back(self, sample_observation):
+        schema = _build_acp_schema(sample_observation, [], {})
 
         assert schema["product"]["brand"] is None
         assert schema["product"]["attributes"]["material"] is None
         assert schema["product"]["attributes"]["condition"] == "new"
-        assert schema["campaigns"]["short_title"] == sample_vlm_response["title"]
+        assert schema["campaigns"]["short_title"] == sample_observation["title"]
 
-    def test_null_extracted_values_do_not_suppress_enriched_fallbacks(self, sample_vlm_response):
+    def test_null_extracted_values_do_not_suppress_enriched_fallbacks(self, sample_observation):
         extracted = {
             "condition": None,
             "short_title": "",
@@ -113,31 +113,31 @@ class TestBuildAcpSchema:
             "product_highlights": None,
         }
 
-        schema = _build_acp_schema(sample_vlm_response, [], extracted)
+        schema = _build_acp_schema(sample_observation, [], extracted)
 
-        assert schema["product"]["title"] == sample_vlm_response["title"]
-        assert schema["product"]["description"] == sample_vlm_response["description"]
+        assert schema["product"]["title"] == sample_observation["title"]
+        assert schema["product"]["description"] == sample_observation["description"]
         assert schema["product"]["attributes"]["condition"] == "new"
         assert schema["product"]["details"] == []
-        assert schema["product"]["highlights"] == sample_vlm_response["tags"]
-        assert schema["campaigns"]["short_title"] == sample_vlm_response["title"]
+        assert schema["product"]["highlights"] == sample_observation["tags"]
+        assert schema["campaigns"]["short_title"] == sample_observation["title"]
 
-    def test_nested_measurement_structure(self, sample_vlm_response):
-        schema = _build_acp_schema(sample_vlm_response, [], {})
+    def test_nested_measurement_structure(self, sample_observation):
+        schema = _build_acp_schema(sample_observation, [], {})
 
         dims = schema["product"]["dimensions"]
         for key in ("length", "width", "height", "weight"):
             assert dims[key] == {"value": None, "unit": None}
 
-    def test_nested_money_structure(self, sample_vlm_response):
-        schema = _build_acp_schema(sample_vlm_response, [], {})
+    def test_nested_money_structure(self, sample_observation):
+        schema = _build_acp_schema(sample_observation, [], {})
 
         installment = schema["pricing"]["installment"]
         assert installment["amount"] == {"amount": None, "currency": None}
         assert installment["downpayment"] == {"amount": None, "currency": None}
 
-    def test_all_top_level_sections_present(self, sample_vlm_response):
-        schema = _build_acp_schema(sample_vlm_response, [], {})
+    def test_all_top_level_sections_present(self, sample_observation):
+        schema = _build_acp_schema(sample_observation, [], {})
 
         expected_sections = [
             "product", "pricing", "faqs", "agent_actions",
@@ -160,18 +160,18 @@ class TestBuildAcpSchema:
 class TestBuildUcpSchema:
     """Tests for the UCP schema builder."""
 
-    def test_structured_title_and_description(self, sample_vlm_response):
-        schema = _build_ucp_schema(sample_vlm_response, [], {})
+    def test_structured_title_and_description(self, sample_observation):
+        schema = _build_ucp_schema(sample_observation, [], {})
 
-        assert schema["title"] == sample_vlm_response["title"]
+        assert schema["title"] == sample_observation["title"]
         assert schema["structured_title"]["digital_source_type"] == "trained_algorithmic_media"
-        assert schema["structured_title"]["content"] == sample_vlm_response["title"]
-        assert schema["description"] == sample_vlm_response["description"]
+        assert schema["structured_title"]["content"] == sample_observation["title"]
+        assert schema["description"] == sample_observation["description"]
         assert schema["structured_description"]["digital_source_type"] == "trained_algorithmic_media"
-        assert schema["structured_description"]["content"] == sample_vlm_response["description"]
+        assert schema["structured_description"]["content"] == sample_observation["description"]
 
-    def test_merges_extracted_fields(self, sample_vlm_response, sample_extracted_fields):
-        schema = _build_ucp_schema(sample_vlm_response, [], sample_extracted_fields)
+    def test_merges_extracted_fields(self, sample_observation, sample_extracted_fields):
+        schema = _build_ucp_schema(sample_observation, [], sample_extracted_fields)
 
         assert schema["brand"] == "Elegance Co"
         assert schema["condition"] == "new"
@@ -181,62 +181,62 @@ class TestBuildUcpSchema:
         assert schema["short_title"] == "Elegant Black Handbag"
         assert schema["google_product_category"] == "Apparel & Accessories > Handbags"
 
-    def test_merges_product_details(self, sample_vlm_response, sample_extracted_fields):
-        schema = _build_ucp_schema(sample_vlm_response, [], sample_extracted_fields)
+    def test_merges_product_details(self, sample_observation, sample_extracted_fields):
+        schema = _build_ucp_schema(sample_observation, [], sample_extracted_fields)
 
         assert len(schema["product_detail"]) == 2
         assert schema["product_detail"][0]["attribute_name"] == "Closure Type"
 
-    def test_deterministic_defaults(self, sample_vlm_response):
-        schema = _build_ucp_schema(sample_vlm_response, [], {})
+    def test_deterministic_defaults(self, sample_observation):
+        schema = _build_ucp_schema(sample_observation, [], {})
 
         assert schema["availability"] == "in_stock"
         assert schema["adult"] is False
         assert schema["is_bundle"] is False
         assert schema["identifier_exists"] is False
 
-    def test_color_joined_with_slash(self, sample_vlm_response):
-        schema = _build_ucp_schema(sample_vlm_response, [], {})
+    def test_color_joined_with_slash(self, sample_observation):
+        schema = _build_ucp_schema(sample_observation, [], {})
         assert schema["color"] == "black / gold"
 
-    def test_product_type_joined_with_arrow(self, sample_vlm_response):
-        schema = _build_ucp_schema(sample_vlm_response, [], {})
+    def test_product_type_joined_with_arrow(self, sample_observation):
+        schema = _build_ucp_schema(sample_observation, [], {})
         assert schema["product_type"] == "bags"
 
-    def test_product_highlight_from_tags(self, sample_vlm_response):
-        schema = _build_ucp_schema(sample_vlm_response, [], {})
-        assert schema["product_highlight"] == sample_vlm_response["tags"]
+    def test_product_highlight_from_tags(self, sample_observation):
+        schema = _build_ucp_schema(sample_observation, [], {})
+        assert schema["product_highlight"] == sample_observation["tags"]
 
-    def test_product_highlight_from_extracted(self, sample_vlm_response, sample_extracted_fields):
-        schema = _build_ucp_schema(sample_vlm_response, [], sample_extracted_fields)
+    def test_product_highlight_from_extracted(self, sample_observation, sample_extracted_fields):
+        schema = _build_ucp_schema(sample_observation, [], sample_extracted_fields)
         assert schema["product_highlight"] == sample_extracted_fields["product_highlights"]
 
-    def test_includes_faqs(self, sample_vlm_response, sample_faqs_response):
-        schema = _build_ucp_schema(sample_vlm_response, sample_faqs_response, {})
+    def test_includes_faqs(self, sample_observation, sample_faqs_response):
+        schema = _build_ucp_schema(sample_observation, sample_faqs_response, {})
 
         assert len(schema["faqs"]) == len(sample_faqs_response)
         assert schema["faqs"][0]["question"] == sample_faqs_response[0]["question"]
 
-    def test_empty_faqs(self, sample_vlm_response):
-        schema = _build_ucp_schema(sample_vlm_response, [], {})
+    def test_empty_faqs(self, sample_observation):
+        schema = _build_ucp_schema(sample_observation, [], {})
         assert schema["faqs"] == []
 
-    def test_money_type_structure(self, sample_vlm_response):
-        schema = _build_ucp_schema(sample_vlm_response, [], {})
+    def test_money_type_structure(self, sample_observation):
+        schema = _build_ucp_schema(sample_observation, [], {})
 
         for field in ("price", "sale_price", "cost_of_goods_sold", "auto_pricing_min_price", "maximum_retail_price"):
             assert schema[field] == {"amount": None, "currency": None}, f"{field} should be a money object"
 
-    def test_measurement_type_structure(self, sample_vlm_response):
-        schema = _build_ucp_schema(sample_vlm_response, [], {})
+    def test_measurement_type_structure(self, sample_observation):
+        schema = _build_ucp_schema(sample_observation, [], {})
 
         for field in ("unit_pricing_measure", "unit_pricing_base_measure",
                        "product_length", "product_width", "product_height", "product_weight",
                        "shipping_weight", "shipping_length", "shipping_width", "shipping_height"):
             assert schema[field] == {"value": None, "unit": None}, f"{field} should be a measurement object"
 
-    def test_array_fields_are_lists(self, sample_vlm_response):
-        schema = _build_ucp_schema(sample_vlm_response, [], {})
+    def test_array_fields_are_lists(self, sample_observation):
+        schema = _build_ucp_schema(sample_observation, [], {})
 
         array_fields = [
             "additional_image_link", "loyalty_program", "certification",
@@ -248,8 +248,8 @@ class TestBuildUcpSchema:
         for field in array_fields:
             assert isinstance(schema[field], list), f"{field} should be a list"
 
-    def test_installment_nested_structure(self, sample_vlm_response):
-        schema = _build_ucp_schema(sample_vlm_response, [], {})
+    def test_installment_nested_structure(self, sample_observation):
+        schema = _build_ucp_schema(sample_observation, [], {})
 
         inst = schema["installment"]
         assert inst["months"] is None
@@ -257,8 +257,8 @@ class TestBuildUcpSchema:
         assert inst["downpayment"] == {"amount": None, "currency": None}
         assert inst["credit_type"] is None
 
-    def test_subscription_cost_nested_structure(self, sample_vlm_response):
-        schema = _build_ucp_schema(sample_vlm_response, [], {})
+    def test_subscription_cost_nested_structure(self, sample_observation):
+        schema = _build_ucp_schema(sample_observation, [], {})
 
         sub = schema["subscription_cost"]
         assert sub["period"] is None
@@ -277,7 +277,7 @@ class TestBuildUcpSchema:
         schema = _build_ucp_schema({"title": "t", "description": "d", "colors": [], "categories": [], "tags": []}, [], {})
         assert schema["product_highlight"] == []
 
-    def test_null_extracted_values_do_not_suppress_enriched_fallbacks(self, sample_vlm_response):
+    def test_null_extracted_values_do_not_suppress_enriched_fallbacks(self, sample_observation):
         extracted = {
             "condition": None,
             "short_title": "",
@@ -285,18 +285,18 @@ class TestBuildUcpSchema:
             "product_highlights": None,
         }
 
-        schema = _build_ucp_schema(sample_vlm_response, [], extracted)
+        schema = _build_ucp_schema(sample_observation, [], extracted)
 
-        assert schema["title"] == sample_vlm_response["title"]
-        assert schema["description"] == sample_vlm_response["description"]
+        assert schema["title"] == sample_observation["title"]
+        assert schema["description"] == sample_observation["description"]
         assert schema["condition"] == "new"
         assert schema["product_detail"] == []
-        assert schema["product_highlight"] == sample_vlm_response["tags"]
-        assert schema["short_title"] == sample_vlm_response["title"]
+        assert schema["product_highlight"] == sample_observation["tags"]
+        assert schema["short_title"] == sample_observation["title"]
 
-    def test_all_ucp_sections_present(self, sample_vlm_response):
+    def test_all_ucp_sections_present(self, sample_observation):
         """Verify all 9 UCP sections have at least one representative field."""
-        schema = _build_ucp_schema(sample_vlm_response, [], {})
+        schema = _build_ucp_schema(sample_observation, [], {})
 
         section_fields = {
             "Basic product data": "structured_title",

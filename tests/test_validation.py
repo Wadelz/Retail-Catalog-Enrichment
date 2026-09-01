@@ -23,129 +23,7 @@ import json
 import pytest
 from fastapi import UploadFile
 import backend.main as main
-from backend.main import _validate_image, _validate_policy_uploads, VALID_LOCALES
-
-
-class TestValidateImage:
-    """Tests for _validate_image helper function."""
-    
-    @pytest.mark.asyncio
-    async def test_validate_image_success_png(self, sample_image_bytes):
-        """Test successful validation of PNG image."""
-        from unittest.mock import Mock, AsyncMock
-        upload_file = Mock(spec=UploadFile)
-        upload_file.filename = "test.png"
-        upload_file.file = io.BytesIO(sample_image_bytes)
-        upload_file.content_type = "image/png"
-        upload_file.read = AsyncMock(return_value=sample_image_bytes)
-        
-        result, error = await _validate_image(upload_file, "/test")
-        
-        assert error is None
-        assert result is not None
-        image_bytes, content_type = result
-        assert isinstance(image_bytes, bytes)
-        assert len(image_bytes) > 0
-        assert content_type == "image/png"
-    
-    @pytest.mark.asyncio
-    async def test_validate_image_success_jpeg(self, sample_jpeg_bytes):
-        """Test successful validation of JPEG image."""
-        from unittest.mock import Mock, AsyncMock
-        upload_file = Mock(spec=UploadFile)
-        upload_file.filename = "test.jpg"
-        upload_file.file = io.BytesIO(sample_jpeg_bytes)
-        upload_file.content_type = "image/jpeg"
-        upload_file.read = AsyncMock(return_value=sample_jpeg_bytes)
-        
-        result, error = await _validate_image(upload_file, "/test")
-        
-        assert error is None
-        assert result is not None
-        image_bytes, content_type = result
-        assert isinstance(image_bytes, bytes)
-        assert len(image_bytes) > 0
-        assert content_type == "image/jpeg"
-    
-    @pytest.mark.asyncio
-    async def test_validate_image_empty_file(self):
-        """Test validation fails for empty file."""
-        from unittest.mock import Mock, AsyncMock
-        upload_file = Mock(spec=UploadFile)
-        upload_file.filename = "empty.png"
-        upload_file.file = io.BytesIO(b"")
-        upload_file.content_type = "image/png"
-        upload_file.read = AsyncMock(return_value=b"")
-        
-        result, error = await _validate_image(upload_file, "/test")
-        
-        assert result is None
-        assert error is not None
-        assert error.status_code == 400
-        error_detail = json.loads(error.body.decode())
-        assert "empty" in error_detail["detail"].lower()
-    
-    @pytest.mark.asyncio
-    async def test_validate_image_non_image_content_type(self):
-        """Test validation fails for non-image content type."""
-        from unittest.mock import Mock, AsyncMock
-        upload_file = Mock(spec=UploadFile)
-        upload_file.filename = "test.txt"
-        upload_file.file = io.BytesIO(b"some text content")
-        upload_file.content_type = "text/plain"
-        upload_file.read = AsyncMock(return_value=b"some text content")
-        
-        result, error = await _validate_image(upload_file, "/test")
-        
-        assert result is None
-        assert error is not None
-        assert error.status_code == 400
-        error_detail = json.loads(error.body.decode())
-        assert "must be an image" in error_detail["detail"].lower()
-    
-    @pytest.mark.asyncio
-    async def test_validate_image_no_content_type(self, sample_image_bytes):
-        """Test validation with missing content_type defaults to image/png."""
-        from unittest.mock import Mock, AsyncMock
-        upload_file = Mock(spec=UploadFile)
-        upload_file.filename = "test.png"
-        upload_file.file = io.BytesIO(sample_image_bytes)
-        upload_file.content_type = None
-        upload_file.read = AsyncMock(return_value=sample_image_bytes)
-        
-        result, error = await _validate_image(upload_file, "/test")
-        
-        assert error is None
-        assert result is not None
-        image_bytes, content_type = result
-        # Should default to image/png
-        assert content_type == "image/png"
-    
-    @pytest.mark.asyncio
-    async def test_validate_image_with_various_image_types(self, sample_image_bytes):
-        """Test validation accepts various image MIME types."""
-        from unittest.mock import Mock, AsyncMock
-        image_types = [
-            "image/png",
-            "image/jpeg",
-            "image/jpg",
-            "image/gif",
-            "image/webp"
-        ]
-        
-        for content_type in image_types:
-            upload_file = Mock(spec=UploadFile)
-            upload_file.filename = f"test.{content_type.split('/')[-1]}"
-            upload_file.file = io.BytesIO(sample_image_bytes)
-            upload_file.content_type = content_type
-            upload_file.read = AsyncMock(return_value=sample_image_bytes)
-            
-            result, error = await _validate_image(upload_file, "/test")
-            
-            assert error is None, f"Failed for {content_type}"
-            assert result is not None
-            _, returned_content_type = result
-            assert returned_content_type == content_type
+from backend.main import _validate_policy_uploads, VALID_LOCALES
 
 
 class TestValidatePolicyUploads:
@@ -234,7 +112,7 @@ class TestLocaleValidation:
 class TestNIMHealthCache:
     @pytest.mark.asyncio
     async def test_health_nims_returns_cached_result_without_downstream_checks(self, monkeypatch):
-        cached = {"vlm": "healthy", "llm": "healthy", "flux": "healthy", "trellis": "healthy"}
+        cached = {"llm": "healthy", "embeddings": "healthy"}
         monkeypatch.setattr(main, "_nim_health_cache", cached)
         monkeypatch.setattr(main, "_nim_health_cache_expires_at", main.time.monotonic() + 60)
         monkeypatch.setattr(main, "get_config", lambda: pytest.fail("cache should avoid config lookup"))
@@ -253,7 +131,7 @@ class TestFAQValidation:
         ['{"battery": 5}', "[1, 2, 3]", "5"],
     )
     async def test_rejects_invalid_manual_knowledge_shape(self, manual_knowledge):
-        response = await main.vlm_faqs(
+        response = await main.generate_faqs(
             title="x",
             description="",
             categories="[]",

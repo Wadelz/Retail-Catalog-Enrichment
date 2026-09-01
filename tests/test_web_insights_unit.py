@@ -36,9 +36,6 @@ def test_web_insights_config_defaults(tmp_path):
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         """
-vlm:
-  url: http://test-vlm/v1
-  model: test-vlm
 llm:
   url: http://test-llm/v1
   model: test-llm

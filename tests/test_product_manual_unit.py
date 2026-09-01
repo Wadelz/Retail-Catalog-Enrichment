@@ -470,14 +470,14 @@ class TestExtractManualKnowledge:
 
 
 # ---------------------------------------------------------------------------
-# _format_manual_knowledge (tested via vlm.py)
+# _format_manual_knowledge (tested via enrich.py)
 # ---------------------------------------------------------------------------
 
 class TestFormatManualKnowledge:
-    """Tests for _format_manual_knowledge in vlm.py."""
+    """Tests for _format_manual_knowledge in enrich.py."""
 
     def test_formats_non_empty_topics(self):
-        from backend.vlm import _format_manual_knowledge
+        from backend.enrich import _format_manual_knowledge
         knowledge = {
             "battery_life": "Lasts up to 12 hours on a single charge.",
             "safety": "Do not immerse in water above 1 meter.",
@@ -491,7 +491,7 @@ class TestFormatManualKnowledge:
         assert "[Empty Topic]" not in result
 
     def test_all_empty_topics(self):
-        from backend.vlm import _format_manual_knowledge
+        from backend.enrich import _format_manual_knowledge
         knowledge = {"a": "", "b": "   "}
         result = _format_manual_knowledge(knowledge)
         assert "PRODUCT MANUAL KNOWLEDGE:" in result
@@ -512,7 +512,7 @@ class TestProductManualConfig:
         from backend.config import Config
 
         config_file = tmp_path / "config.yaml"
-        config_file.write_text(yaml.dump({"vlm": {"url": "http://x", "model": "m"}}))
+        config_file.write_text(yaml.dump({"llm": {"url": "http://x", "model": "m"}}))
         config = Config(config_path=str(config_file))
         pm_config = config.get_product_manual_config()
 
@@ -526,7 +526,6 @@ class TestProductManualConfig:
         from backend.config import Config
 
         data = {
-            "vlm": {"url": "http://x", "model": "m"},
             "product_manual": {
                 "chunk_size_words": 300,
                 "chunk_overlap_words": 75,
@@ -546,14 +545,14 @@ class TestProductManualConfig:
 
 
 # ---------------------------------------------------------------------------
-# FAQ generation with manual knowledge (via vlm.py)
+# FAQ generation with manual knowledge (via enrich.py)
 # ---------------------------------------------------------------------------
 
 class TestFaqGenerationWithManual:
     """Test that _call_nemotron_generate_faqs correctly uses manual knowledge."""
 
-    @patch("backend.vlm.OpenAI")
-    @patch("backend.vlm.get_config")
+    @patch("backend.enrich.OpenAI")
+    @patch("backend.enrich.get_config")
     def test_prompt_includes_manual_section_when_provided(
         self, mock_config, mock_openai, mock_env_vars
     ):
@@ -572,7 +571,7 @@ class TestFaqGenerationWithManual:
             "battery_life": "The speaker lasts up to 12 hours on a single charge.",
         }
 
-        from backend.vlm import _call_nemotron_generate_faqs
+        from backend.enrich import _call_nemotron_generate_faqs
         result = _call_nemotron_generate_faqs(
             {"title": "Bluetooth Speaker", "description": "Portable speaker"},
             locale="en-US",
@@ -589,8 +588,8 @@ class TestFaqGenerationWithManual:
         assert "Battery Life" in prompt
         assert "12 hours" in prompt
 
-    @patch("backend.vlm.OpenAI")
-    @patch("backend.vlm.get_config")
+    @patch("backend.enrich.OpenAI")
+    @patch("backend.enrich.get_config")
     def test_no_manual_section_when_not_provided(
         self, mock_config, mock_openai, mock_env_vars
     ):
@@ -605,7 +604,7 @@ class TestFaqGenerationWithManual:
         mock_chunk.choices = [Mock(delta=Mock(content=faqs_json))]
         mock_openai.return_value.chat.completions.create.return_value = [mock_chunk]
 
-        from backend.vlm import _call_nemotron_generate_faqs
+        from backend.enrich import _call_nemotron_generate_faqs
         result = _call_nemotron_generate_faqs(
             {"title": "Handbag", "description": "Leather bag"},
             locale="en-US",
@@ -616,8 +615,8 @@ class TestFaqGenerationWithManual:
         assert "PRODUCT MANUAL KNOWLEDGE:" not in prompt
         assert "3 to 5" in prompt
 
-    @patch("backend.vlm.OpenAI")
-    @patch("backend.vlm.get_config")
+    @patch("backend.enrich.OpenAI")
+    @patch("backend.enrich.get_config")
     def test_empty_manual_knowledge_uses_basic_prompt(
         self, mock_config, mock_openai, mock_env_vars
     ):
@@ -630,7 +629,7 @@ class TestFaqGenerationWithManual:
         mock_chunk.choices = [Mock(delta=Mock(content='[{"question":"Q","answer":"A"}]'))]
         mock_openai.return_value.chat.completions.create.return_value = [mock_chunk]
 
-        from backend.vlm import _call_nemotron_generate_faqs
+        from backend.enrich import _call_nemotron_generate_faqs
         _call_nemotron_generate_faqs(
             {"title": "X", "description": "Y"},
             manual_knowledge={"specs": "", "care": "   "},
@@ -641,8 +640,8 @@ class TestFaqGenerationWithManual:
         assert "3 to 5" in prompt
         assert call_args.kwargs["max_tokens"] == 2048
 
-    @patch("backend.vlm.OpenAI")
-    @patch("backend.vlm.get_config")
+    @patch("backend.enrich.OpenAI")
+    @patch("backend.enrich.get_config")
     def test_max_tokens_higher_with_manual(
         self, mock_config, mock_openai, mock_env_vars
     ):
@@ -654,7 +653,7 @@ class TestFaqGenerationWithManual:
         mock_chunk.choices = [Mock(delta=Mock(content="[]"))]
         mock_openai.return_value.chat.completions.create.return_value = [mock_chunk]
 
-        from backend.vlm import _call_nemotron_generate_faqs
+        from backend.enrich import _call_nemotron_generate_faqs
 
         # With manual
         _call_nemotron_generate_faqs(

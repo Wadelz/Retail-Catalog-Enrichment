@@ -65,64 +65,6 @@ class TestConfigLoading:
             Config(config_path=str(config_file))
 
 
-class TestVLMConfig:
-    """Tests for VLM configuration retrieval."""
-    
-    def test_get_vlm_config_success(self, tmp_path, sample_config_dict):
-        """Test successful VLM config retrieval."""
-        config_file = tmp_path / "config.yaml"
-        with open(config_file, 'w') as f:
-            yaml.dump(sample_config_dict, f)
-        
-        config = Config(config_path=str(config_file))
-        vlm_config = config.get_vlm_config()
-        
-        assert vlm_config["url"] == "http://test-vlm:8000/v1"
-        assert vlm_config["model"] == "test-vlm-model"
-    
-    def test_get_vlm_config_missing_section(self, tmp_path):
-        """Test error when VLM section is missing."""
-        config_data = {"llm": {"url": "test", "model": "test"}}
-        config_file = tmp_path / "config.yaml"
-        with open(config_file, 'w') as f:
-            yaml.dump(config_data, f)
-        
-        config = Config(config_path=str(config_file))
-        
-        with pytest.raises(ValueError) as exc_info:
-            config.get_vlm_config()
-        
-        assert "VLM configuration section not found" in str(exc_info.value)
-    
-    def test_get_vlm_config_missing_url(self, tmp_path):
-        """Test error when VLM url is missing."""
-        config_data = {"vlm": {"model": "test-model"}}
-        config_file = tmp_path / "config.yaml"
-        with open(config_file, 'w') as f:
-            yaml.dump(config_data, f)
-        
-        config = Config(config_path=str(config_file))
-        
-        with pytest.raises(ValueError) as exc_info:
-            config.get_vlm_config()
-        
-        assert "VLM url not configured" in str(exc_info.value)
-    
-    def test_get_vlm_config_missing_model(self, tmp_path):
-        """Test error when VLM model is missing."""
-        config_data = {"vlm": {"url": "http://test:8000"}}
-        config_file = tmp_path / "config.yaml"
-        with open(config_file, 'w') as f:
-            yaml.dump(config_data, f)
-        
-        config = Config(config_path=str(config_file))
-        
-        with pytest.raises(ValueError) as exc_info:
-            config.get_vlm_config()
-        
-        assert "VLM model not configured" in str(exc_info.value)
-
-
 class TestLLMConfig:
     """Tests for LLM configuration retrieval."""
     
@@ -140,7 +82,7 @@ class TestLLMConfig:
     
     def test_get_llm_config_missing_section(self, tmp_path):
         """Test error when LLM section is missing."""
-        config_data = {"vlm": {"url": "test", "model": "test"}}
+        config_data = {"embeddings": {"url": "test", "model": "test"}}
         config_file = tmp_path / "config.yaml"
         with open(config_file, 'w') as f:
             yaml.dump(config_data, f)
@@ -165,96 +107,6 @@ class TestLLMConfig:
             config.get_llm_config()
         
         assert "LLM model not configured" in str(exc_info.value)
-
-
-class TestFluxConfig:
-    """Tests for FLUX configuration retrieval."""
-    
-    def test_get_flux_config_success(self, tmp_path, sample_config_dict):
-        """Test successful FLUX config retrieval."""
-        config_file = tmp_path / "config.yaml"
-        with open(config_file, 'w') as f:
-            yaml.dump(sample_config_dict, f)
-        
-        config = Config(config_path=str(config_file))
-        flux_config = config.get_flux_config()
-        
-        assert flux_config["url"] == "http://test-flux:8000/v1/infer"
-    
-    def test_get_flux_config_missing_section(self, tmp_path):
-        """Test error when FLUX section is missing."""
-        config_data = {"vlm": {"url": "test", "model": "test"}}
-        config_file = tmp_path / "config.yaml"
-        with open(config_file, 'w') as f:
-            yaml.dump(config_data, f)
-        
-        config = Config(config_path=str(config_file))
-        
-        with pytest.raises(ValueError) as exc_info:
-            config.get_flux_config()
-        
-        assert "FLUX configuration section not found" in str(exc_info.value)
-    
-    def test_get_flux_config_missing_url(self, tmp_path):
-        """Test error when FLUX url is missing."""
-        # Empty dict is treated as "section not found" because empty dict is falsy
-        config_data = {"flux": {}}
-        config_file = tmp_path / "config.yaml"
-        with open(config_file, 'w') as f:
-            yaml.dump(config_data, f)
-        
-        config = Config(config_path=str(config_file))
-        
-        with pytest.raises(ValueError) as exc_info:
-            config.get_flux_config()
-        
-        # Empty dict triggers "section not found" error
-        assert "configuration section not found" in str(exc_info.value).lower()
-
-
-class TestTrellisConfig:
-    """Tests for TRELLIS configuration retrieval."""
-    
-    def test_get_trellis_config_success(self, tmp_path, sample_config_dict):
-        """Test successful TRELLIS config retrieval."""
-        config_file = tmp_path / "config.yaml"
-        with open(config_file, 'w') as f:
-            yaml.dump(sample_config_dict, f)
-        
-        config = Config(config_path=str(config_file))
-        trellis_config = config.get_trellis_config()
-        
-        assert trellis_config["url"] == "http://test-trellis:8000/v1/infer"
-    
-    def test_get_trellis_config_missing_section(self, tmp_path):
-        """Test error when TRELLIS section is missing."""
-        config_data = {"vlm": {"url": "test", "model": "test"}}
-        config_file = tmp_path / "config.yaml"
-        with open(config_file, 'w') as f:
-            yaml.dump(config_data, f)
-        
-        config = Config(config_path=str(config_file))
-        
-        with pytest.raises(ValueError) as exc_info:
-            config.get_trellis_config()
-        
-        assert "TRELLIS configuration section not found" in str(exc_info.value)
-    
-    def test_get_trellis_config_missing_url(self, tmp_path):
-        """Test error when TRELLIS url is missing."""
-        # Empty dict is treated as "section not found" because empty dict is falsy
-        config_data = {"trellis": {}}
-        config_file = tmp_path / "config.yaml"
-        with open(config_file, 'w') as f:
-            yaml.dump(config_data, f)
-        
-        config = Config(config_path=str(config_file))
-        
-        with pytest.raises(ValueError) as exc_info:
-            config.get_trellis_config()
-        
-        # Empty dict triggers "section not found" error
-        assert "configuration section not found" in str(exc_info.value).lower()
 
 
 class TestGetConfigSingleton:

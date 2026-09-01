@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "catalog-enrichment"
 version = "0.1.0"
-description = "A system for enriching product catalog data with additional metadata, descriptions, and categorization."
+description = "Text-only product catalog enrichment: source reconciliation, PDF and web evidence, policy compliance."
 requires-python = ">=3.11"
 dependencies = [
   "uvicorn[standard]==0.38.0",
@@ -16,7 +16,6 @@ dependencies = [
   "python-dotenv==1.2.2",
   "requests==2.33.0",
   "httpx==0.28.1",
-  "pillow==12.3.0",
   "pymilvus==2.5.15",
   "pyyaml==6.0.3",
   "pypdf==6.15.0",

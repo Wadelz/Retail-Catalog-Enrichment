@@ -12,14 +12,14 @@ After product analysis, the UI should show a **Web Insights** tab next to the **
 - practical usage patterns
 - differentiators and purchase considerations
 - recurring customer questions or complaints
-- source-backed insights that can inform later catalog copy, FAQs, imagery, and protocol exports
+- source-backed insights that can inform later catalog copy, FAQs, and protocol exports
 
 This feature is informational by default. It should not automatically rewrite the enriched title, description, FAQs, or protocol schemas without a later explicit product decision.
 
 ## User Flow
 
-1. User uploads an image and optionally enters existing product data.
-2. `/vlm/analyze` enriches the product title, description, categories, tags, and colors.
+1. Caller supplies a source observation and optionally an existing catalog entry.
+2. `/enrich` enriches the product title, description, categories, tags, and colors.
 3. The frontend starts web insight generation in the background using the enriched product title as the primary input.
 4. The backend creates a Deep Agents research agent with an Exa-backed web search tool.
 5. The agent searches first, then classifies whether source evidence supports product-specific, brand-level, category-level, or insufficient-identity research.
@@ -30,7 +30,7 @@ This feature is informational by default. It should not automatically rewrite th
 
 ```mermaid
 flowchart LR
-  UI["Next.js UI"] --> Analyze["POST /vlm/analyze"]
+  Client["API client"] --> Analyze["POST /enrich"]
   Analyze --> Fields["Enriched product fields"]
   Fields --> Insights["POST /research/product-insights"]
   Insights --> Agent["Deep Agents SDK"]
@@ -53,8 +53,8 @@ Content-Type: `multipart/form-data`
 |-----------|------|----------|-------------|
 | `title` | string | Yes | Enriched product title. Used as the primary product and brand disambiguation input. |
 | `description` | string | No | Enriched product description. Used only to reduce ambiguity, not as a source of web claims. |
-| `categories` | JSON string | No | Categories array from `/vlm/analyze`. |
-| `tags` | JSON string | No | Tags array from `/vlm/analyze`. |
+| `categories` | JSON string | No | Categories array from `/enrich`. |
+| `tags` | JSON string | No | Tags array from `/enrich`. |
 | `locale` | string | No | Regional locale code for summary language and source preference (default: `en-US`). |
 | `max_results` | integer | No | Maximum Exa results the search tool should return per query (default: 8, max: 20). |
 
@@ -216,9 +216,9 @@ The **Web Insights** tab should include:
 - grouped positive and negative retail insight cards
 - primary use case cards
 - customer sentiment narrative
-- no repeated product image, raw warning list, or visible source list in the report view
+- no raw warning list or visible source list in the report view
 
-Failures should not block FAQ generation, protocol schema generation, image variation generation, or 3D generation. Web Insights should not mutate the title, description, FAQs, protocols, images, or 3D outputs.
+Failures should not block enrichment, FAQ generation, or protocol schema generation. Web Insights should not mutate the title, description, FAQs, or protocol outputs.
 
 ## Guardrails
 
@@ -228,7 +228,7 @@ Failures should not block FAQ generation, protocol schema generation, image vari
 - Include source URLs for claims that could affect merchandising or product positioning.
 - Keep source snippets short and do not reproduce long copyrighted text.
 - Exclude unsafe, irrelevant, duplicate, or spam-like sources.
-- Do not use web claims to override visual evidence from the product image unless a later implementation explicitly adds a human review workflow.
+- Do not use web claims to override the source observation unless a later implementation explicitly adds a human review workflow.
 - Do not include personally identifying information from individual commenters or reviewers.
 - Respect Exa rate limits and platform terms.
 

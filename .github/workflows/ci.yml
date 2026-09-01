@@ -102,7 +102,7 @@ jobs:
       - name: Run type checks (optional)
         continue-on-error: true
         run: |
-          pip install mypy types-PyYAML types-requests types-Pillow
+          pip install mypy types-PyYAML types-requests
           mypy src/backend --ignore-missing-imports || echo "⚠️ Type hints could be improved"
 
   # Summary job that waits for all tests to complete

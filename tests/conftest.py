@@ -23,38 +23,9 @@ import os
 import json
 import base64
 import pytest
-from io import BytesIO
-from PIL import Image
 from pathlib import Path
 from unittest.mock import Mock, AsyncMock, MagicMock
 from typing import Dict, Any
-
-
-@pytest.fixture
-def sample_image_bytes() -> bytes:
-    """Create a minimal valid PNG image (1x1 pixel)."""
-    img = Image.new('RGB', (1, 1), color='red')
-    buffer = BytesIO()
-    img.save(buffer, format='PNG')
-    return buffer.getvalue()
-
-
-@pytest.fixture
-def sample_jpeg_bytes() -> bytes:
-    """Create a minimal valid JPEG image (1x1 pixel)."""
-    img = Image.new('RGB', (1, 1), color='blue')
-    buffer = BytesIO()
-    img.save(buffer, format='JPEG')
-    return buffer.getvalue()
-
-
-@pytest.fixture
-def sample_base64_image() -> str:
-    """Return a base64-encoded sample image."""
-    img = Image.new('RGB', (1, 1), color='green')
-    buffer = BytesIO()
-    img.save(buffer, format='PNG')
-    return base64.b64encode(buffer.getvalue()).decode('ascii')
 
 
 @pytest.fixture
@@ -64,8 +35,8 @@ def mock_env_vars(monkeypatch):
 
 
 @pytest.fixture
-def sample_vlm_response() -> Dict[str, Any]:
-    """Sample VLM analysis response."""
+def sample_observation() -> Dict[str, Any]:
+    """Sample source observation / enriched product fields."""
     return {
         "title": "Elegant Black Handbag with Gold Accents",
         "description": "A sophisticated leather handbag featuring gold-tone hardware and a structured design perfect for evening occasions.",
@@ -110,22 +81,6 @@ def sample_faqs_response() -> list:
         {"question": "What occasions is this bag suitable for?", "answer": "Perfect for evening events, formal occasions, and upscale dining."},
         {"question": "What are the main colors?", "answer": "Black with gold accents."}
     ]
-
-
-@pytest.fixture
-def sample_flux_plan() -> Dict[str, Any]:
-    """Sample FLUX variation plan."""
-    return {
-        "preserve_subject": "elegant black handbag with gold hardware",
-        "background_style": "marble bistro table at a Parisian café with Eiffel Tower softly blurred in background",
-        "camera_angle": "overhead",
-        "lighting": "natural window light",
-        "color_palette": "warm neutrals with gold accents",
-        "negatives": ["do not alter the subject", "no text, no logos, no duplicates"],
-        "cfg_scale": 3.5,
-        "steps": 30,
-        "variants": 1
-    }
 
 
 @pytest.fixture
@@ -250,31 +205,21 @@ def valid_locales() -> set:
 def sample_config_dict() -> Dict[str, Any]:
     """Sample configuration dictionary."""
     return {
-        "vlm": {
-            "url": "http://test-vlm:8000/v1",
-            "model": "test-vlm-model"
-        },
         "llm": {
             "url": "http://test-llm:8000/v1",
             "model": "test-llm-model"
         },
-        "flux": {
-            "url": "http://test-flux:8000/v1/infer"
-        },
-        "trellis": {
-            "url": "http://test-trellis:8000/v1/infer"
+        "embeddings": {
+            "url": "http://test-embed:8000/v1",
+            "model": "test-embed-model"
         }
     }
 
 
 @pytest.fixture
 def invalid_config_dict() -> Dict[str, Any]:
-    """Invalid configuration dictionary (missing required fields)."""
+    """Configuration dictionary with required fields missing."""
     return {
-        "vlm": {
-            "url": "http://test-vlm:8000/v1"
-            # Missing 'model' field
-        },
         "llm": {
             "model": "test-llm-model"
             # Missing 'url' field

@@ -1,405 +1,181 @@
 # AGENTS.md - AI Assistant Instructions
 
-This document provides guidelines and instructions for AI assistants working on the catalog-enrichment project.
+Guidelines for AI assistants working on this project.
 
 ## Project Overview
 
-**Project Name:** catalog-enrichment  
-**Repository:** https://gitlab-master.nvidia.com/anmartinez/catalog-enrichment.git  
-**Purpose:** A system for enriching product catalog data with additional metadata, descriptions, and categorization.
+**Project Name:** catalog-enrichment (text-only build)
+**Upstream:** https://github.com/NVIDIA-AI-Blueprints/Retail-Catalog-Enrichment
+**Purpose:** Enrich product catalog data from text evidence — reconciling observed
+product facts against an existing catalog entry and grounding the result in PDF, web
+and policy sources.
+
+This is a derived build with every vision and image-generation component removed. If
+you are about to add an image input, a vision model call, or an asset generator, you
+are working against the point of this build — check first.
 
 ### Documentation Structure
-- **[README.md](README.md)** - Quick start guide and high-level overview
-- **[docs/API.md](docs/API.md)** - Complete API reference with examples
-- **[docs/DOCKER.md](docs/DOCKER.md)** - Docker and container deployment guide
-- **[docs/PRD.md](docs/PRD.md)** - Product requirements document
-- **[docs/POLICY_COMPLIANCE.md](docs/POLICY_COMPLIANCE.md)** - Policy compliance feature guide
-- **[docs/PRODUCT_MANUAL_FAQS.md](docs/PRODUCT_MANUAL_FAQS.md)** - Product manual PDF for FAQ enrichment guide
-- **[AGENTS.md](AGENTS.md)** - This file (AI assistant guidelines)
+- **[README.md](README.md)** — what this build is, quick start, what was removed
+- **[docs/API.md](docs/API.md)** — complete API reference with examples
+- **[docs/DOCKER.md](docs/DOCKER.md)** — container deployment
+- **[docs/POLICY_COMPLIANCE.md](docs/POLICY_COMPLIANCE.md)** — policy library and compliance checks
+- **[docs/PRODUCT_MANUAL_FAQS.md](docs/PRODUCT_MANUAL_FAQS.md)** — manual/datasheet PDF enrichment
+- **[docs/WEB_INSIGHTS.md](docs/WEB_INSIGHTS.md)** — source-grounded web research
+- **[AGENTS.md](AGENTS.md)** — this file
 
-### Current Status
-- ✅ **Multi-Language Support** - Locale-based product descriptions (FR-6 completed)
-- ✅ **VLM Content Augmentation** - Enhances existing product data with visual insights (FR-2 completed)
-- ✅ **2D Image Variation Generation** - Working with prompt planning and quality evaluation (FR-3 completed)
-- ✅ **Automated Quality Assessment** - VLM-based reflection for generated images (FR-9 completed)
-- ✅ **Product FAQ Generation** - FAQs from enriched data with optional product manual PDF enhancement (FR-10, FR-12 completed)
-- ✅ **Policy Compliance** - PDF policy library with Milvus RAG and compliance classification (FR-11 completed)
-- ✅ **Protocol Schema Export** - ACP and UCP schema generation with LLM-extracted structured fields (FR-13 completed)
-- ⚠️ **In Development** - 3D Asset Generation (backend complete) and Video Generation in progress
+### Capabilities
+- ✅ **Source reconciliation and enrichment** — merge-QA and targeted repair (`/enrich`)
+- ✅ **Multi-language support** — 10 locales across English, Spanish, French
+- ✅ **Product FAQ generation** — optionally grounded in a manual or datasheet PDF
+- ✅ **Policy compliance** — PDF policy library with Milvus RAG and classification
+- ✅ **Web insights** — Exa-backed research with identity scoping
+- ✅ **Protocol schema export** — ACP and UCP
+- ❌ **Removed** — image analysis, 2D variation generation, 3D assets, image quality reflection, web UI
 
-### Key Goals
-- Enhance product catalog data with AI-powered enrichment
-- Implement scalable data processing pipelines
-- Ensure data quality and consistency
-- Provide APIs for catalog data access and manipulation
+## Architecture
+
+```
+source observation ──┐
+                     ├─→ pre-filter ─→ merge ─→ merge-QA ─→ targeted repair ─→ enriched copy
+existing catalog ────┘                                                              │
+                                                                                    ├─→ FAQs
+policy PDFs ─→ Milvus ─→ retrieval ─→ compliance decision ──────────────────────────┤
+manual PDFs ─→ chunks ─→ embeddings ─→ per-topic retrieval ─────────────────────────┤
+web ─→ Exa ─→ source packet ─→ identity scoping ────────────────────────────────────┘
+```
+
+| Module | Responsibility |
+|---|---|
+| `enrich.py` | LLM enrichment chain: pre-filter, merge, merge-QA, repair, FAQs, schema-field extraction |
+| `product_manual.py` | PDF → chunks → embeddings → per-topic retrieval (transient, per-request) |
+| `policy_library.py` | Persistent policy corpus over Milvus |
+| `policy.py` | PDF text extraction, policy summarization, compliance decision + repair |
+| `web_insights.py` | Deep Agents + Exa research, identity scoping, metric normalization |
+| `config.py` | YAML config with environment overrides |
+| `main.py` | FastAPI surface and ACP/UCP schema construction |
+
+### The source observation contract
+
+`build_enriched_result(observation, locale, product_data, brand_instructions)` takes a
+plain dict of observed product facts — title, description, categories, tags, colors.
+
+The observation is **authoritative for recorded facts**. `product_data` is the caller's
+existing catalog entry and is **not** trusted: terms that conflict with the observation
+are removed rather than merged. This asymmetry is deliberate and load-bearing — it is
+what stops a stale catalog entry from surviving enrichment. Preserve it.
+
+Where the observation comes from is the caller's business: a supplier feed row, a
+datasheet extract, a scraped spec table. Do not reintroduce assumptions about a
+particular source, and do not write prompts that name one.
 
 ## Build and Test Commands
 
-### Prerequisites
-Since this is an early-stage project, specific dependencies will be documented as they are added.
-
-### Common Commands
 ```bash
-# Clone the repository
-git clone https://gitlab-master.nvidia.com/anmartinez/catalog-enrichment.git
-cd catalog-enrichment
-
-```
-
-### Backend (current)
-
-- Stack: FastAPI + Uvicorn (ASGI), OpenAI client (NVIDIA endpoint), Starlette under the hood
-- Dependencies: `fastapi`, `uvicorn[standard]`, `openai`, `python-multipart`, `python-dotenv`, `httpx`, `pillow`, `pyyaml`, `pymilvus`, `pypdf`, `numpy`
-- Python: 3.11+
-- **Error Handling**: Comprehensive connection error detection with user-friendly messages when NIM endpoints are unreachable
-
-#### Environment
-- Create `.env` at repo root:
-  - `NGC_API_KEY=...`
-  - `NVIDIA_API_BASE_URL=https://integrate.api.nvidia.com/v1` (default)
-
-#### Run (with uv)
-```bash
+uv venv .venv && source .venv/bin/activate
 uv pip install -e .
-uv venv .venv
-source .venv/bin/activate
+
+# Run the service
 uvicorn --app-dir src backend.main:app --host 0.0.0.0 --port 8000 --reload
+
+# Run the tests (no network, no GPU — all external endpoints are mocked)
+PYTHONPATH=src pytest tests/ -q
 ```
 
-#### API Endpoints
+### Environment
+Create `.env` at the repo root:
+- `NGC_API_KEY=...` (required)
+- `EXA_API_KEY=...` (optional; without it `/research/product-insights` returns `status: "disabled"`)
+- `NVIDIA_API_BASE_URL=https://integrate.api.nvidia.com/v1` (default)
 
-**Health & Info:**
-- GET `/` → plaintext greeting
-- GET `/health` → `{ "status": "ok" }`
+### Endpoints
+See [docs/API.md](docs/API.md) for the full reference.
 
-**VLM Analysis:**
-- POST `/vlm/analyze`
-  - Request: `multipart/form-data` with fields:
-    - `image` (file): Product image
-    - `product_data` (JSON string, optional): Existing product data to augment
-    - `locale` (string, optional): Regional locale code (default: "en-US")
-    - `brand_instructions` (string, optional): Custom brand voice, tone, style, and taxonomy guidelines
-  - Response: Product fields JSON with:
-    - `title`: string (enriched and localized)
-    - `description`: string (expanded and localized)
-    - `categories`: array (validated/improved, e.g. ["bags"])
-    - `tags`: array (expanded with relevant terms)
-    - `colors`: array (extracted color palette, e.g. ["black", "gold"])
-    - `enhanced_product`: object (if product_data was provided)
-
-**Rich VLM Product JSON:**
-- POST `/vlm/rich-product`
-  - Request: `multipart/form-data` with fields:
-    - `image` (file): Product image
-    - `locale` (string, optional): Regional locale code (default: "en-US")
-  - Response: Arbitrary JSON object generated directly by Nemotron 3 Nano Omni with rich, visually grounded product attributes
-  - Used by the UI's Raw data tab next to Details
-  - Does not persist artifacts or modify the enriched catalog fields
-
-**Image Generation:**
-- POST `/generate/variation`
-  - Request: `multipart/form-data` with fields:
-    - `image` (file): Product image
-    - `title` (string): Product title from VLM analysis
-    - `description` (string): Product description from VLM analysis
-    - `categories` (JSON string): Categories array from VLM analysis
-    - `tags` (JSON string, optional): Tags array from VLM analysis
-    - `colors` (JSON string, optional): Colors array from VLM analysis
-    - `locale` (string, optional): Regional locale code (default: "en-US")
-    - `enhanced_product` (JSON string, optional): Accepted for backwards compatibility; not persisted or returned
-  - Response: Generated image JSON with:
-    - `generated_image_b64`: string (base64-encoded PNG)
-    - `variation_plan`: object (planner LLM output with background style, camera angle, lighting)
-    - `quality_score`: float (0-100 quality score from VLM reflection, or null if evaluation failed)
-    - `quality_rationale`: string (concise explanation of the reflection score, including why a 100% score was assigned)
-    - `quality_issues`: array (list of detected quality issues from reflection analysis)
-
-**FAQ Generation:**
-- POST `/vlm/faqs`
-  - Request: `multipart/form-data` with fields:
-    - `title` (string, optional): Product title from VLM analysis
-    - `description` (string, optional): Product description from VLM analysis
-    - `categories` (JSON string, optional): Categories array
-    - `tags` (JSON string, optional): Tags array
-    - `colors` (JSON string, optional): Colors array
-    - `locale` (string, optional): Regional locale code (default: "en-US")
-    - `manual_knowledge` (JSON string, optional): Extracted knowledge from `/vlm/manual/extract`
-  - Response: `{ "faqs": [{ "question": "string", "answer": "string" }] }`
-  - Without manual: 3-5 FAQs from product data
-  - With manual knowledge: up to 10 FAQs drawing from both product data and manual
-
-**Product Manual Knowledge Extraction:**
-- POST `/vlm/manual/extract`
-  - Request: `multipart/form-data` with fields:
-    - `file` (file): Product manual PDF (max 50 MB)
-    - `title` (string, optional): Product title for query generation
-    - `categories` (JSON string, optional): Product categories for query generation
-    - `locale` (string, optional): Regional locale code (default: "en-US")
-  - Response: `{ "filename": "string", "chunk_count": 42, "knowledge": { "topic": "extracted text..." } }`
-  - Stateless: all vectors freed after response, no server-side storage
-  - LLM generates 5-8 product-type-specific queries from title + categories (not description)
-  - Retrieves relevant chunks per query via in-memory cosine similarity
-
-**Protocol Schema Generation:**
-- POST `/protocols/generate`
-  - Request: `multipart/form-data` with fields:
-    - `title` (string, optional): Enriched product title
-    - `description` (string, optional): Enriched product description
-    - `categories` (JSON string, optional): Categories array
-    - `tags` (JSON string, optional): Tags array
-    - `colors` (JSON string, optional): Colors array
-    - `faqs` (JSON string, optional): FAQs array from `/vlm/faqs`
-    - `locale` (string, optional): Regional locale code (default: "en-US")
-  - Response: `{ "acp": { ... }, "ucp": { ... } }`
-  - Calls LLM once to extract brand, material, age_group, gender, product_details, product_highlights, short_title, google_product_category
-  - Merges LLM-extracted fields + enriched data + deterministic defaults into both ACP and UCP schemas
-  - ACP: agent-oriented schema with product, pricing, FAQs, agent_actions, fulfillment, campaigns
-  - UCP: Google Merchant Center-derived schema with structured_title/description using `trained_algorithmic_media`
-
-**3D Asset Generation:**
-- POST `/generate/3d`
-  - Request: `multipart/form-data` with fields:
-    - `image` (file): Product image (JPEG, PNG)
-    - `slat_cfg_scale` (float, optional): SLAT configuration scale (default: 5.0)
-    - `ss_cfg_scale` (float, optional): SS configuration scale (default: 10.0)
-    - `slat_sampling_steps` (int, optional): SLAT sampling steps (default: 50)
-    - `ss_sampling_steps` (int, optional): SS sampling steps (default: 50)
-    - `seed` (int, optional): Random seed for reproducibility (default: 0)
-    - `return_json` (bool, optional): Return JSON with base64 GLB or binary GLB (default: false)
-  - Response: Binary GLB file (model/gltf-binary) or JSON with:
-    - `glb_base64`: string (base64-encoded GLB file)
-    - `artifact_id`: string (unique identifier)
-    - `metadata`: object (generation parameters and file size)
-
-
-Input Product Data Schema (optional):
-```json
-{
-  "title": "string",
-  "description": "string",
-  "price": "number",
-  "categories": ["string"],
-  "tags": ["string"]
-}
-```
-
-Example Response:
-```json
-{
-  "title": "Glamorous Black Evening Handbag with Gold Accents",
-  "description": "This exquisite handbag exudes sophistication and elegance...",
-  "categories": ["bags"],
-  "tags": ["black leather", "gold accents", "evening bag", "rectangular shape"],
-  "colors": ["black", "gold"]
-}
-```
-
-Supported locales: `en-US`, `en-GB`, `en-AU`, `en-CA`, `es-ES`, `es-MX`, `es-AR`, `es-CO`, `fr-FR`, `fr-CA`
-
-#### VLM Prompt (summary)
-- Instructs the model to augment existing product data by analyzing the product image
-- Enriches the `title` with more descriptive and persuasive language in the specified regional locale
-- Expands the `description` with richer, more detailed content using regional terminology
-- Enhances `attributes` with visual insights (e.g., "Black" → "Matte Black with Silver Hardware")
-- Validates and improves `categories` array based on visual analysis
-- Expands `tags` with additional relevant terms
-- Includes regional context and terminology guidance (e.g., "ordenador" vs "computadora" for Spanish regions)
-- Applies custom brand instructions when provided for consistent tone, voice, and taxonomy
-- Preserves existing structured data (price, specs, etc.) while enhancing descriptive fields
-
-#### Image Generation Pipeline
-The image variation generation follows a multi-stage pipeline:
-1. **Planner Stage**: LLM creates a culturally-aware variation plan with background style, camera angle, and lighting
-2. **FLUX Generation Stage**: Image generation model creates the variation based on the plan
-3. **Reflection Stage**: VLM evaluates the generated image quality by comparing it to the original product
-   - Uses product title to focus evaluation on the specific product (not background elements)
-   - Evaluates product structure & form fidelity (structural elements like straps, handles, pockets must match)
-   - Assesses product consistency (colors, materials, textures, reflective properties must match original)
-   - Evaluates size and scale proportions (product must be realistically sized in new context)
-   - Checks anatomical accuracy (if hands are present, verifies natural appearance)
-   - Validates background quality (photorealism, appropriate context)
-   - Returns quality score (0-100) and list of detected issues
-4. **Return Stage**: Returns the generated image and evaluation data directly without writing image or metadata artifacts to disk
-
-**Quality Scoring**: The reflection module is exceptionally strict, with most images scoring 50-70%. Scores above 85% indicate excellent quality with only minor issues. The evaluation now focuses specifically on the named product to avoid false positives from background variations.
-
-#### Examples
-
-**Fast VLM Analysis:**
-```bash
-# Analyze image only - Default American English
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  -F "locale=en-US" \
-  http://localhost:8000/vlm/analyze
-
-# With product data (augmentation mode) - American English
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  -F 'product_data={"title":"Classic Black Patent purse","description":"Elegant bag","price":15.99,"categories":["bags"],"tags":["bag","purse"]}' \
-  -F "locale=en-US" \
-  http://localhost:8000/vlm/analyze
-
-# Spain Spanish with product data
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  -F 'product_data={"categories":["bags"],"title":"Black Purse","description":"Elegant bag"}' \
-  -F "locale=es-ES" \
-  http://localhost:8000/vlm/analyze
-
-# With brand-specific instructions for custom tone and taxonomy
-curl -X POST \
-  -F "image=@product.jpg;type=image/jpeg" \
-  -F 'product_data={"title":"Beauty Product","description":"Nice cream"}' \
-  -F "locale=en-US" \
-  -F 'brand_instructions=You work at a premium beauty retailer. Use a playful, empowering, and inclusive brand voice. Focus on self-expression and beauty discovery. Use terms like "beauty lovers", "glow", "radiant", and "treat yourself". Our product taxonomy emphasizes skin benefits and ingredient transparency.' \
-  http://localhost:8000/vlm/analyze
-```
-
-**Image Generation:**
-```bash
-# Generate variation using VLM results
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  -F "locale=en-US" \
-  -F "title=Glamorous Black Evening Handbag with Gold Accents" \
-  -F "description=This exquisite handbag exudes sophistication..." \
-  -F 'categories=["bags"]' \
-  -F 'tags=["black leather","gold accents","evening bag"]' \
-  -F 'colors=["black","gold"]' \
-  http://localhost:8000/generate/variation
-```
-
-**3D Asset Generation:**
-```bash
-# Generate 3D GLB asset with default parameters (returns binary GLB)
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  http://localhost:8000/generate/3d \
-  --output product.glb
-
-# Generate with custom parameters
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  -F "slat_cfg_scale=5.0" \
-  -F "ss_cfg_scale=10.0" \
-  -F "slat_sampling_steps=50" \
-  -F "ss_sampling_steps=50" \
-  -F "seed=42" \
-  http://localhost:8000/generate/3d \
-  --output product.glb
-
-# Return JSON with base64-encoded GLB (useful for web clients)
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  -F "return_json=true" \
-  http://localhost:8000/generate/3d
-```
-
-**Note:** Build and test commands will be updated as the project's technology stack is finalized.
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/health`, `/health/nims` | Liveness; LLM and embedding NIM status |
+| POST | `/enrich` | Reconcile and enrich |
+| POST | `/faqs` | FAQs from enriched fields |
+| POST | `/manual/extract` | Knowledge from a manual/datasheet PDF |
+| POST | `/research/product-insights` | Source-grounded web research |
+| GET/POST/DELETE | `/policies` | Policy library management |
+| POST | `/protocols/generate` | ACP and UCP schemas |
 
 ## Code Style Guidelines
 
 ### General Principles
-- **Clarity over cleverness** - Write code that is easy to understand and maintain
-- **Consistent formatting** - Use automated formatting tools when available
-- **Meaningful names** - Use descriptive variable, function, and class names
-- **Documentation** - Include docstrings and comments for complex logic
+- **Clarity over cleverness** — write code that is easy to understand and maintain
+- **Consistent formatting** — use automated formatting tools when available
+- **Meaningful names** — use descriptive variable, function, and class names
+- **Documentation** — include docstrings and comments for complex logic
 
 ### File Organization
 - Keep files focused on a single responsibility
-- Use clear, descriptive file names
-- Organize code into logical directories/modules
-- Separate configuration from business logic
+- Organize code into logical modules; separate configuration from business logic
+- Every `chat.completions.create` call must disable thinking via `extra_body` —
+  `tests/test_llm_thinking_config.py` enforces this statically across `src/backend/`
 
 ## Testing Instructions
 
-### Testing Strategy
-- **Unit Tests** - Test individual functions and components in isolation
-- **Integration Tests** - Test interactions between system components
-- **Data Validation Tests** - Ensure data integrity and format compliance
-- **Performance Tests** - Validate system performance under load
+### Strategy
+- **Unit tests** — test individual functions in isolation, with external endpoints mocked
+- **Data validation tests** — schema compliance, transformation accuracy, malformed input
+- **Static checks** — see the thinking-config test above
 
-### Test Organization
-- Place tests in a dedicated `tests/` directory or alongside source code
-- Mirror the source code structure in test organization
+### Organization
+- Tests live in `tests/`, mirroring the source module names
+- Fixtures shared via `tests/conftest.py`; no test may make a network call
 - Use descriptive test names that explain what is being tested
 
-### Data Testing
-Given the catalog enrichment focus, pay special attention to:
-- Data validation and sanitization
-- Schema compliance
-- Data transformation accuracy
-- Edge cases and malformed input handling
-
 ### Coverage Goals
-- Aim for >80% code coverage on critical paths
-- Prioritize testing of data processing and enrichment logic
-- Include error handling and edge case scenarios
+- Aim for >80% coverage on critical paths
+- Prioritize enrichment, reconciliation and retrieval logic
+- Include error handling and edge cases
 
 ## Security Considerations
 
-### Data Security
-- **PII Protection** - Identify and protect personally identifiable information
-- **Data Classification** - Understand and respect data sensitivity levels
-- **Access Controls** - Implement appropriate authentication and authorization
-- **Data Encryption** - Encrypt sensitive data in transit and at rest
-
-### API Security
-- Validate all input data
-- Implement rate limiting to prevent abuse
-- Use HTTPS for all external communications
-- Log security events for monitoring
-
-### Development Security
-- Keep dependencies up to date
-- Use environment variables for sensitive configuration
-- Never commit credentials or secrets to version control
-- Conduct security reviews for critical changes
-
-### NVIDIA-Specific Considerations
-- Follow NVIDIA security policies and guidelines
-- Ensure compliance with enterprise security requirements
-- Use approved tools and services where applicable
+- **Input validation** — validate every request field; the PDF paths enforce type and size limits
+- **Secrets** — use environment variables; never commit credentials
+- **Dependencies** — keep them current; the build is pinned in `pyproject.toml`
+- **External content** — web insight sources and uploaded PDFs are untrusted input.
+  Boilerplate stripping exists for this reason; do not weaken it.
+- **Logging** — log security-relevant events; never log API keys or full document text
 
 ## AI Assistant Guidelines
 
 ### When Working on This Project
 
-1. **Understand the Context**
-   - This is a data-centric project focused on catalog enrichment
-   - Consider data quality, performance, and scalability in all decisions
-   - Be mindful of the enterprise environment (NVIDIA internal)
+1. **Understand the context**
+   - Data-centric project; weigh data quality, cost and scalability in every decision
+   - This build is deliberately text-only — do not reintroduce image handling
 
-2. **Code Quality**
+2. **Code quality**
    - Always run tests before suggesting changes
-   - Ensure new code follows established patterns
-   - Include appropriate error handling and logging
+   - Follow established patterns; include error handling and logging
 
-3. **LLM Prompt Rules**
-   - **NEVER hardcode specific product examples in prompts.** Rules must be generic and work across all products. For example, do NOT write rules like `"when the user says 'synthetic leather' and the camera sees 'leather', use the user's term"` — instead write `"when there is a conflict, prefer the user's terms for materials and specs"`.
+3. **LLM prompt rules**
+   - **NEVER hardcode specific product examples in prompts.** Rules must be generic and
+     work across all products. Do not write `"when the user says 'synthetic leather'
+     and the source says 'leather', use the user's term"` — write `"when there is a
+     conflict, prefer the user's terms for materials and specs"`.
    - Prompts are consumed by millions of products — every rule must generalize.
    - If a specific scenario fails, fix the underlying rule, not just the example.
-   - When improving prompts, prefer generic, scalable prompt contracts, schemas, field separation, and reusable rubrics. Do not add product-specific examples, literal-token filters, or one-off regex/string post-processing rules unless explicitly requested.
+   - Prefer generic prompt contracts, schemas, field separation and reusable rubrics.
+     Do not add product-specific examples, literal-token filters, or one-off
+     regex/string post-processing unless explicitly requested.
+   - Prompts must not assume the observation came from any particular source.
 
 4. **Documentation**
    - Update relevant documentation when making changes
-   - Include examples in API documentation
-   - Keep this AGENTS.md file current as the project evolves
+   - Include examples in API documentation; keep this file current
 
 5. **Communication**
    - Ask for clarification when requirements are ambiguous
-   - Suggest improvements to architecture and processes
    - Flag potential security or performance concerns
 
-6. **Incremental Development**
-   - Start with simple, working solutions
-   - Iterate and improve based on feedback
-   - Consider backwards compatibility when making changes
+6. **Incremental development**
+   - Start simple; iterate on feedback
+   - Consider backwards compatibility
 
 ---
 
-**Last Updated:** 16-Apr-2026  
-**Version:** 1.3  
-
-*This document should be updated as the project evolves and new practices are established.*
+*Derived from the upstream NVIDIA blueprint's AGENTS.md. Update as the project evolves.*

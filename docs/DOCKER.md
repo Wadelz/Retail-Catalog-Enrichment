@@ -6,24 +6,19 @@ This guide explains how to deploy the Catalog Enrichment application using Docke
 
 The application consists of the following services:
 
-- **Frontend** (Port 3000): Next.js UI for product catalog enrichment
 - **Backend** (Port 8000): FastAPI backend for orchestrating enrichment workflows
-- **Nemotron 3 Nano Omni VLM NIM** (Port 8001): Omni-modal model for image analysis
 - **Nemotron 3.5 Lightning LLM NIM** (Port 8002): Large Language Model for text generation
-- **Flux NIM** (Port 8003): Image generation model for product variations
-- **Trellis NIM** (Port 8004): 3D asset generation model
-- **Embeddings NIM** (Post 8005): Embeddings for policy compliance
+- **Embeddings NIM** (Port 8005): Embeddings for policy and manual retrieval
 - **Milvus Stack** (Ports 19530, 9091, 9001): Persistent vector search for loaded policy PDFs
 - **External Search API**: Exa is used by the product web insights agent
 
 ## Prerequisites
 
 - Docker 24.0+ with Docker Compose
-- NVIDIA 4xH100 (80GB) GPU with Docker GPU support (nvidia-docker2)
+- NVIDIA GPU with Docker GPU support (nvidia-docker2); 2 GPUs for the default assignment below
 - NVIDIA NGC API Key
-- HuggingFace Token (for Flux model)
 - Optional Exa API Key (for product web insights)
-- 512GB disk space
+- 200GB disk space
 
 ## Setup
 
@@ -35,10 +30,7 @@ Create a `.env` file in the project root:
 # NVIDIA NGC API Key (required for all NIM services)
 NGC_API_KEY=your_ngc_api_key_here
 
-# HuggingFace Token (required for Flux model)
-HF_TOKEN=your_huggingface_token_here
-
-# Exa API Key (optional; without it, the Web Insights tab shows a disabled message)
+# Exa API Key (optional; without it, /research/product-insights returns status "disabled")
 EXA_API_KEY=your_exa_api_key_here
 ```
 
@@ -68,14 +60,14 @@ docker compose -f docker-compose.rag.yml up -d
 ### Start Specific Services
 
 ```bash
-# Start only backend and frontend (without NIM models)
-docker-compose up -d backend frontend
+# Start only the backend (without NIM models)
+docker-compose up -d backend
 
 # Start a specific NIM model
-docker-compose up -d vlm-nim
+docker-compose up -d llm-nim
 
 # Start all NIM models
-docker-compose up -d vlm-nim llm-nim flux-nim trellis-nim
+docker-compose up -d llm-nim embedqa
 
 # Start the persistent policy RAG stack
 docker compose -f docker-compose.rag.yml up -d
@@ -89,7 +81,6 @@ docker-compose logs -f
 
 # Specific service
 docker-compose logs -f backend
-docker-compose logs -f frontend
 docker compose -f docker-compose.rag.yml logs -f milvus-standalone
 ```
 
@@ -112,12 +103,6 @@ docker compose -f docker-compose.rag.yml down -v
 docker build -f src/backend/Dockerfile -t catalog-enrichment-backend .
 ```
 
-### Build Frontend
-
-```bash
-docker build -f src/ui/Dockerfile -t catalog-enrichment-frontend ./src/ui
-```
-
 ### Rebuild All Services
 
 ```bash
@@ -129,8 +114,8 @@ docker-compose up -d
 
 Once all services are running:
 
-- **Frontend UI**: http://localhost:3000
 - **Backend API**: http://localhost:8000
+- **Interactive API docs**: http://localhost:8000/docs
 - **Health Check**: http://localhost:8000/health
 - **Milvus gRPC**: localhost:19530
 - **Milvus health**: localhost:9091
@@ -140,10 +125,8 @@ Once all services are running:
 
 The default configuration assigns one GPU to each NIM model:
 
-- Nemotron 3 Nano Omni VLM: GPU 0
-- Nemotron 3.5 Lightning LLM: GPU 1
-- Trellis: GPU 2
-- Flux: GPU 3
+- Nemotron 3.5 Lightning LLM: GPU 0
+- Embeddings (nv-embedqa-e5-v5): GPU 1
 
 To adjust GPU assignments, edit the `device_ids` in `docker-compose.yml`:
 
@@ -176,7 +159,7 @@ docker-compose ps
 
 ```bash
 docker-compose logs backend
-docker-compose logs vlm-nim
+docker-compose logs llm-nim
 docker compose -f docker-compose.rag.yml logs milvus-standalone
 ```
 

@@ -54,18 +54,9 @@ class Config:
     def _get_optional_section_config(self, section: str) -> Dict[str, Any]:
         return self._config_data.get(section, {}) or {}
         
-    def get_vlm_config(self) -> Dict[str, str]:
-        return self._get_section_config('vlm', ['url', 'model'])
-        
     def get_llm_config(self) -> Dict[str, str]:
         return self._get_section_config('llm', ['url', 'model'])
         
-    def get_flux_config(self) -> Dict[str, str]:
-        return self._get_section_config('flux', ['url'])
-        
-    def get_trellis_config(self) -> Dict[str, str]:
-        return self._get_section_config('trellis', ['url'])
-
     def get_embeddings_config(self) -> Dict[str, str]:
         config = self._get_optional_section_config('embeddings')
         return {

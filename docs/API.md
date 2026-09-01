@@ -35,24 +35,19 @@ Health check endpoint for monitoring service status.
 
 The API provides a modular approach for optimal performance and flexibility:
 
-- **1) Fast VLM Analysis (POST `/vlm/analyze`)** - Get product fields quickly
-- **2) Rich VLM Product JSON (POST `/vlm/rich-product`)** - Get a detailed image-grounded JSON object directly from Nemotron 3 Nano Omni
-- **3) FAQ Generation (POST `/vlm/faqs`)** - Generate product FAQs from enriched data
-- **3.5) Manual Knowledge Extraction (POST `/vlm/manual/extract`)** - Extract knowledge from a product manual PDF to enrich FAQs
+- **1) Policy Library (`/policies`)** - Load the policy PDFs that enrichment is checked against
+- **2) Product Enrichment (POST `/enrich`)** - Reconcile a source observation into enriched catalog copy
+- **3) FAQ Generation (POST `/faqs`)** - Generate product FAQs from enriched data
+- **3.5) Manual Knowledge Extraction (POST `/manual/extract`)** - Extract knowledge from a product manual or datasheet PDF to enrich FAQs
 - **4) Product Web Insights (POST `/research/product-insights`)** - Research public web information about the enriched product
-- **5) Image Generation (POST `/generate/variation`)** - Generate 2D variations on demand
-- **6) 3D Asset Generation (POST `/generate/3d`)** - Generate 3D models on demand
-- **7) Protocol Schema Generation (POST `/protocols/generate`)** - Generate ACP and UCP schemas
+- **5) Protocol Schema Generation (POST `/protocols/generate`)** - Generate ACP and UCP schemas
 
 **Benefits of this approach:**
-- Display product information immediately to users
-- Load rich VLM JSON, FAQs, web insights, and protocol schemas independently
-- Generate images and 3D assets in the background or on-demand
-- Cache VLM results and generate multiple variations
+- Return core product fields immediately
+- Load FAQs, web insights and protocol schemas independently
+- Cache enrichment results and re-run downstream steps cheaply
 - Better error handling for each step
-- Parallel generation of multiple asset types
-
----
+- Each step fails independently without blocking the others
 
 ## 1️⃣ Policy Library: `/policies`
 
@@ -61,7 +56,7 @@ Manage the persistent PDF policy library used during analysis.
 Policy documents are handled as a persistent single-user RAG library:
 - uploaded PDFs are parsed and normalized into structured policy summaries
 - normalized policy records are embedded and stored in Milvus
-- `/vlm/analyze` automatically performs semantic retrieval against the loaded policy library
+- `/enrich` automatically performs semantic retrieval against the loaded policy library
 - the compliance classifier receives the analyzed product plus the retrieved policy records
 
 ### GET `/policies`
@@ -155,251 +150,90 @@ curl -X DELETE http://localhost:8000/policies
 
 ---
 
-## 2️⃣ Fast VLM Analysis: `/vlm/analyze`
+## 2️⃣ Product Enrichment: `/enrich`
 
-Extract product fields using NVIDIA Nemotron 3 Nano Omni and, when policies are loaded, run policy retrieval plus compliance classification.
+Reconcile a source observation against an existing catalog entry and return enriched, localized catalog copy.
 
-**Endpoint**: `POST /vlm/analyze`  
-**Content-Type**: `multipart/form-data`
+The **source observation** is whatever authoritative product evidence you already hold: a supplier feed row, a datasheet extract, a scraped spec table. It is treated as ground truth for recorded facts. The optional **product_data** is your current catalog entry; it is reconciled against the observation rather than trusted, so stale or conflicting terms are removed instead of merged.
 
 ### Request Parameters
 
 | Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `image` | file | Yes | Product image file (JPEG, PNG) |
-| `locale` | string | No | Regional locale code (default: "en-US") |
-| `product_data` | JSON string | No | Existing product data to augment |
-| `brand_instructions` | string | No | Custom brand voice, tone, style, and taxonomy guidelines |
+|---|---|---|---|
+| `source_observation` | string (JSON object) | Yes | Observed product facts. Must include a non-empty `title`. |
+| `locale` | string | No | Target locale (default `en-US`). |
+| `product_data` | string (JSON object) | No | Existing catalog entry to reconcile against the observation. |
+| `brand_instructions` | string | No | Brand voice, tone, style and taxonomy guidance. |
 
-When one or more policy PDFs have been loaded through `/policies`, this endpoint also:
-- retrieves semantically relevant normalized policy records from Milvus using the VLM title/description/categories/tags/colors
-- runs a compliance classifier against the analyzed product and the retrieved policy records
-
-### Product Data Schema (Optional)
+### Source Observation Schema
 
 ```json
 {
-  "title": "string",
-  "description": "string",
-  "price": "number",
-  "categories": ["string"],
-  "tags": ["string"]
+  "title": "Grohe Eurosmart single-lever basin mixer, chrome",
+  "description": "Single-lever basin mixer with ceramic cartridge.",
+  "categories": ["sanitary"],
+  "tags": ["mixer", "basin"],
+  "colors": ["chrome"]
 }
 ```
 
 ### Response Schema
 
-```json
-{
-  "title": "string",
-  "description": "string",
-  "categories": ["string"],
-  "tags": ["string"],
-  "colors": ["string"],
-  "locale": "string",
-  "policy_decision": {
-    "status": "pass | fail",
-    "label": "string",
-    "summary": "string",
-    "matched_policies": [
-      {
-        "document_name": "string",
-        "policy_title": "string",
-        "rule_title": "string",
-        "reason": "string",
-        "evidence": ["string"]
-      }
-    ],
-    "warnings": ["string"],
-    "evidence_note": "string"
-  }
-}
-```
-
-`policy_decision` is included only when the policy library contains at least one loaded document.
-
-### Usage Examples
-
-#### Image Only (Generation Mode)
-```bash
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  -F "locale=en-US" \
-  http://localhost:8000/vlm/analyze
-```
-
-#### With Existing Product Data (Augmentation Mode)
-```bash
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  -F 'product_data={"title":"Classic Black Patent purse","description":"Elegant bag","price":15.99,"categories":["bags"],"tags":["bag","purse"]}' \
-  -F "locale=en-US" \
-  http://localhost:8000/vlm/analyze
-```
-
-#### Regional Localization (Spain Spanish)
-```bash
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  -F 'product_data={"title":"Black Purse","description":"Elegant bag"}' \
-  -F "locale=es-ES" \
-  http://localhost:8000/vlm/analyze
-```
-
-#### With Brand-Specific Instructions
-```bash
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  -F 'product_data={"title":"Beauty Product","description":"Nice cream"}' \
-  -F "locale=en-US" \
-  -F 'brand_instructions=Write the catalog as a professional expert in Sephora Beauty. Strictly use this tone and style when writing the product document. Use this example as guidance for skincare products: Title: Radiant Hydration Face Cream Description: A rich, nourishing cream designed to leave skin feeling soft, hydrated, and luminous with a polished beauty-editor tone.' \
-  http://localhost:8000/vlm/analyze
-```
-
-### Example Response
-
-```json
-{
-  "title": "Glamorous Black Evening Handbag with Gold Accents",
-  "description": "This exquisite handbag exudes sophistication and elegance. Crafted from high-quality, glossy leather...",
-  "categories": ["bags"],
-  "tags": ["black leather", "gold accents", "evening bag", "rectangular shape"],
-  "colors": ["black", "gold"],
-  "locale": "en-US",
-  "policy_decision": {
-    "status": "pass",
-    "label": "Policy Check Passed",
-    "summary": "No loaded policy appears applicable to this product.",
-    "matched_policies": [],
-    "warnings": [],
-    "evidence_note": "Policy retrieval did not return any candidate matches for this product."
-  }
-}
-```
-
----
-
-## 2.5️⃣ Rich VLM Product JSON: `/vlm/rich-product`
-
-Ask Nemotron 3 Nano Omni to describe the uploaded product image as a rich JSON object. This endpoint is image-only: it does not merge user-entered product data, apply brand instructions, run policy checks, or modify the enriched catalog fields returned by `/vlm/analyze`.
-
-The response schema is intentionally flexible because the VLM may return different useful attributes depending on what is visible in the product image. The UI displays this object in the **Raw data** tab next to **Details**.
-
-**Endpoint**: `POST /vlm/rich-product`  
-**Content-Type**: `multipart/form-data`
-
-### Request Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `image` | file | Yes | Product image file (JPEG, PNG) |
-| `locale` | string | No | Regional locale code (default: `en-US`) |
-
-### Response Schema
-
-```json
-{
-  "visible_product": true,
-  "product_identity": {
-    "product_type": "string|null",
-    "brand_visible": "string|null",
-    "model_or_variant_visible": "string|null",
-    "visible_text": ["string"],
-    "logo_or_markings": ["string"]
-  },
-  "visual_summary": {
-    "short_description": "string|null",
-    "primary_category_guess": "string|null",
-    "confidence_notes": ["string"]
-  },
-  "appearance": {
-    "colors": ["string"],
-    "shape": "string|null",
-    "pattern": "string|null",
-    "finish_or_texture": ["string"],
-    "materials_visible": ["string"],
-    "style_or_design": ["string"]
-  },
-  "physical_structure": {
-    "visible_components": ["string"],
-    "closures_or_openings": ["string"],
-    "controls_or_interfaces": ["string"],
-    "ports_or_connectors": ["string"],
-    "attachments_or_accessories": ["string"]
-  },
-  "packaging_and_labels": {
-    "packaging_visible": "string|null",
-    "label_claims_visible": ["string"],
-    "warnings_or_symbols_visible": ["string"]
-  },
-  "condition_and_context": {
-    "apparent_condition": "string|null",
-    "use_context_visible": "string|null",
-    "background_or_staging": "string|null"
-  },
-  "commerce_relevant_attributes": {
-    "category_candidates": ["string"],
-    "search_keywords_from_image": ["string"],
-    "notable_visual_features": ["string"]
-  },
-  "uncertainties": ["string"]
-}
-```
-
-The endpoint asks the VLM to use this generic schema across product categories. Non-applicable or non-visible fields should be `null` or empty arrays.
-
-If the VLM returns content that cannot be parsed as a JSON object, the endpoint still returns `200` with the raw response preserved:
-
-```json
-{
-  "parse_status": "unstructured",
-  "warning": "VLM returned content that could not be parsed as a JSON object; raw response preserved.",
-  "raw_response": "string"
-}
-```
-
-If the VLM starts a JSON object but truncates before closing it, the backend attempts a best-effort recovery and removes duplicate primitive array values:
-
-```json
-{
-  "parse_status": "recovered_from_partial_json",
-  "warning": "VLM returned incomplete JSON; the backend closed the object and removed duplicate array values.",
-  "recovered_data": {}
-}
-```
+| Field | Type | Description |
+|---|---|---|
+| `title` | string | Enriched, localized title. |
+| `description` | string | Expanded, localized description. |
+| `categories` | array | Validated categories. |
+| `tags` | array | Expanded tag list. |
+| `colors` | array | Normalized color palette. |
+| `locale` | string | Echo of the requested locale. |
+| `enhanced_product` | object | Present only when `product_data` was supplied: the reconciled record. |
+| `policy_decision` | object | Present only when a policy library is loaded. See `/policies`. |
 
 ### Usage Example
 
 ```bash
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  -F "locale=en-US" \
-  http://localhost:8000/vlm/rich-product
+curl -X POST http://localhost:8000/enrich \
+  -F 'source_observation={"title":"Grohe Eurosmart basin mixer, chrome","categories":["sanitary"]}' \
+  -F 'locale=en-GB'
 ```
 
----
+With an existing catalog entry to reconcile:
 
-## 3️⃣ FAQ Generation: `/vlm/faqs`
+```bash
+curl -X POST http://localhost:8000/enrich \
+  -F 'source_observation={"title":"Grohe Eurosmart basin mixer, chrome"}' \
+  -F 'product_data={"title":"Chrome tap","tags":["bathroom"]}' \
+  -F 'brand_instructions=Plain, factual tone. No superlatives.'
+```
 
-Generate frequently asked questions and answers for a product based on its enriched catalog data. Designed to be called after `/vlm/analyze` completes, using the enriched result as input.
+### Notes
+
+- Reconciliation is multi-stage: a pre-filter removes user terms that conflict with the observation, a merge step produces the copy, and a QA pass plus a targeted repair step resolve any identity regression that survives.
+- No claim is invented: the model is constrained to facts present in the source observation or the supplied product data.
+
+
+## 3️⃣ FAQ Generation: `/faqs`
+
+Generate frequently asked questions and answers for a product based on its enriched catalog data. Designed to be called after `/enrich` completes, using the enriched result as input.
 
 Without a product manual: generates 3-5 basic FAQs from the product data.
-With manual knowledge (from `/vlm/manual/extract`): generates up to 10 richer FAQs that draw from both the product data and the manual, surfacing details that go beyond the description.
+With manual knowledge (from `/manual/extract`): generates up to 10 richer FAQs that draw from both the product data and the manual, surfacing details that go beyond the description.
 
-**Endpoint**: `POST /vlm/faqs`
+**Endpoint**: `POST /faqs`
 **Content-Type**: `multipart/form-data`
 
 ### Request Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `title` | string | No | Product title from VLM analysis |
-| `description` | string | No | Product description from VLM analysis |
+| `title` | string | No | Product title from enrichment |
+| `description` | string | No | Product description from enrichment |
 | `categories` | JSON string | No | Categories array (default: `[]`) |
 | `tags` | JSON string | No | Tags array (default: `[]`) |
 | `colors` | JSON string | No | Colors array (default: `[]`) |
 | `locale` | string | No | Regional locale code (default: `en-US`) |
-| `manual_knowledge` | JSON string | No | Extracted manual knowledge from `/vlm/manual/extract` |
+| `manual_knowledge` | JSON string | No | Extracted manual knowledge from `/manual/extract` |
 
 ### Response Schema
 
@@ -417,7 +251,7 @@ With manual knowledge (from `/vlm/manual/extract`): generates up to 10 richer FA
 ### Usage Example (Basic)
 
 ```bash
-# Call after /vlm/analyze to generate FAQs from enriched data
+# Call after /enrich to generate FAQs from enriched data
 curl -X POST \
   -F "title=Craftsman 20V Cordless Lawn Mower" \
   -F "description=A cordless lawn mower featuring a black and red design..." \
@@ -425,7 +259,7 @@ curl -X POST \
   -F 'tags=["cordless","lawn mower","Craftsman"]' \
   -F 'colors=["black","red"]' \
   -F "locale=en-US" \
-  http://localhost:8000/vlm/faqs
+  http://localhost:8000/faqs
 ```
 
 ### Usage Example (With Product Manual)
@@ -436,7 +270,7 @@ KNOWLEDGE=$(curl -s -X POST \
   -F "file=@mower-manual.pdf" \
   -F "title=Craftsman 20V Cordless Lawn Mower" \
   -F 'categories=["electronics"]' \
-  http://localhost:8000/vlm/manual/extract | jq -c '.knowledge')
+  http://localhost:8000/manual/extract | jq -c '.knowledge')
 
 curl -X POST \
   -F "title=Craftsman 20V Cordless Lawn Mower" \
@@ -446,7 +280,7 @@ curl -X POST \
   -F 'colors=["black","red"]' \
   -F "locale=en-US" \
   -F "manual_knowledge=$KNOWLEDGE" \
-  http://localhost:8000/vlm/faqs
+  http://localhost:8000/faqs
 ```
 
 ### Example Response
@@ -472,13 +306,13 @@ curl -X POST \
 
 ---
 
-## 3.5️⃣ Product Manual Knowledge Extraction: `/vlm/manual/extract`
+## 3.5️⃣ Product Manual Knowledge Extraction: `/manual/extract`
 
 Extract structured knowledge from a product manual PDF using targeted RAG. The endpoint processes the PDF, generates product-type-specific queries via the LLM (using title + categories, not description, to avoid duplicating what the description already covers), and retrieves relevant chunks from the manual for each topic.
 
 This endpoint is **stateless** — all embeddings are computed in-memory and freed after the response. It can handle concurrent requests for different products.
 
-**Endpoint**: `POST /vlm/manual/extract`
+**Endpoint**: `POST /manual/extract`
 **Content-Type**: `multipart/form-data`
 
 ### Request Parameters
@@ -514,7 +348,7 @@ curl -X POST \
   -F "title=JBL Flip 6 Portable Speaker" \
   -F 'categories=["electronics"]' \
   -F "locale=en-US" \
-  http://localhost:8000/vlm/manual/extract
+  http://localhost:8000/manual/extract
 ```
 
 ### Batch Script Example
@@ -530,14 +364,14 @@ for product in products/*.json; do
     -F "file=@$PDF" \
     -F "title=$TITLE" \
     -F "categories=$CATS" \
-    http://localhost:8000/vlm/manual/extract | jq -c '.knowledge')
+    http://localhost:8000/manual/extract | jq -c '.knowledge')
 
   curl -s -X POST \
     -F "title=$TITLE" \
     -F "description=$(jq -r '.description' "$product")" \
     -F "categories=$CATS" \
     -F "manual_knowledge=$KNOWLEDGE" \
-    http://localhost:8000/vlm/faqs
+    http://localhost:8000/faqs
 done
 ```
 
@@ -545,7 +379,7 @@ done
 
 ## 4️⃣ Product Web Insights: `/research/product-insights`
 
-Research public web information about a product using a Deep Agents research agent with Exa search. Exa retrieves search results, highlights, and text excerpts only; Nemotron/Deep Agent performs the summarization and dashboard synthesis. Designed to be called after `/vlm/analyze` completes, using the enriched title as the primary product and brand disambiguation input.
+Research public web information about a product using a Deep Agents research agent with Exa search. Exa retrieves search results, highlights, and text excerpts only; Nemotron/Deep Agent performs the summarization and dashboard synthesis. Designed to be called after `/enrich` completes, using the enriched title as the primary product and brand disambiguation input.
 
 The endpoint is informational. It returns source-backed insights for display in the UI and does not automatically modify the enriched title, description, FAQs, or protocol schemas.
 
@@ -556,7 +390,7 @@ The endpoint is informational. It returns source-backed insights for display in 
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `title` | string | Yes | Enriched product title from VLM analysis. Used as the primary product and brand search signal. |
+| `title` | string | Yes | Enriched product title from `/enrich`. Used as the primary product and brand search signal. |
 | `description` | string | No | Enriched product description. Used only for disambiguation. |
 | `categories` | JSON string | No | Categories array (default: `[]`) |
 | `tags` | JSON string | No | Tags array (default: `[]`) |
@@ -750,157 +584,11 @@ curl -X POST \
 - Uses the Deep Agents SDK as the research harness and Exa as the retrieval tool.
 - LLM-generated dashboard scores are returned only as source-backed directional signals; thin coverage returns warnings and neutral metric fallbacks.
 - Web claims should be treated as external context. Sources are returned for auditability but are not listed in the default dashboard view.
-- Failure to generate web insights should not block FAQs, protocol schemas, image generation, or 3D generation.
+- Failure to generate web insights should not block enrichment, FAQs, or protocol schemas.
 
 ---
 
-## 5️⃣ Image Generation: `/generate/variation`
-
-Generate culturally-appropriate product variations using FLUX models based on VLM analysis results.
-
-**Endpoint**: `POST /generate/variation`  
-**Content-Type**: `multipart/form-data`
-
-### Request Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `image` | file | Yes | Product image file (JPEG, PNG) |
-| `title` | string | Yes | Product title from VLM analysis |
-| `description` | string | Yes | Product description from VLM analysis |
-| `categories` | JSON string | Yes | Categories array from VLM analysis |
-| `locale` | string | No | Regional locale code (default: "en-US") |
-| `tags` | JSON string | No | Tags array from VLM analysis |
-| `colors` | JSON string | No | Colors array from VLM analysis |
-| `enhanced_product` | JSON string | No | Accepted for backwards compatibility; not persisted or returned |
-
-### Response Schema
-
-```json
-{
-  "generated_image_b64": "string (base64)",
-  "variation_plan": {
-    "preserve_subject": "string",
-    "background_style": "string",
-    "camera_angle": "string",
-    "lighting": "string"
-  },
-  "quality_score": 85.5,
-  "quality_rationale": "string",
-  "quality_issues": ["string"],
-  "locale": "string"
-}
-```
-
-### Usage Example
-
-```bash
-# First, run VLM analysis to get the fields, then:
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  -F "locale=en-US" \
-  -F "title=Glamorous Black Evening Handbag with Gold Accents" \
-  -F "description=This exquisite handbag exudes sophistication..." \
-  -F 'categories=["bags"]' \
-  -F 'tags=["black leather","gold accents","evening bag"]' \
-  -F 'colors=["black","gold"]' \
-  http://localhost:8000/generate/variation
-```
-
-### Example Response
-
-```json
-{
-  "generated_image_b64": "iVBORw0KGgoAAAANS...",
-  "variation_plan": {
-    "preserve_subject": "black evening handbag",
-    "background_style": "Parisian apartment entryway with soft natural window light",
-    "camera_angle": "3/4 view",
-    "lighting": "natural window light"
-  },
-  "quality_score": 85.5,
-  "quality_rationale": "Product fidelity is strong; the intended background change does not alter the product.",
-  "quality_issues": [],
-  "locale": "en-US"
-}
-```
-
----
-
-## 6️⃣ 3D Asset Generation: `/generate/3d`
-
-Generate interactive 3D GLB models from 2D product images using Microsoft's TRELLIS model.
-
-**Endpoint**: `POST /generate/3d`  
-**Content-Type**: `multipart/form-data`
-
-### Request Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `image` | file | Yes | - | Product image file (JPEG, PNG) |
-| `slat_cfg_scale` | float | No | 5.0 | SLAT configuration scale |
-| `ss_cfg_scale` | float | No | 10.0 | SS configuration scale |
-| `slat_sampling_steps` | int | No | 50 | SLAT sampling steps |
-| `ss_sampling_steps` | int | No | 50 | SS sampling steps |
-| `seed` | int | No | 0 | Random seed for reproducibility |
-| `return_json` | bool | No | false | Return JSON with base64 GLB or binary GLB |
-
-### Response Formats
-
-#### Binary Mode (default)
-Returns binary GLB file (`model/gltf-binary`) ready for download.
-
-#### JSON Mode
-```json
-{
-  "glb_base64": "string (base64)",
-  "artifact_id": "string",
-  "metadata": {
-    "slat_cfg_scale": 5.0,
-    "ss_cfg_scale": 10.0,
-    "slat_sampling_steps": 50,
-    "ss_sampling_steps": 50,
-    "seed": 42,
-    "size_bytes": 1234567
-  }
-}
-```
-
-### Usage Examples
-
-#### Basic Usage (Binary GLB Response)
-```bash
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  http://localhost:8000/generate/3d \
-  --output product.glb
-```
-
-#### With Custom Parameters
-```bash
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  -F "slat_cfg_scale=5.0" \
-  -F "ss_cfg_scale=10.0" \
-  -F "slat_sampling_steps=50" \
-  -F "ss_sampling_steps=50" \
-  -F "seed=42" \
-  http://localhost:8000/generate/3d \
-  --output product.glb
-```
-
-#### JSON Response (for Web Clients)
-```bash
-curl -X POST \
-  -F "image=@bag.jpg;type=image/jpeg" \
-  -F "return_json=true" \
-  http://localhost:8000/generate/3d
-```
-
----
-
-## 7️⃣ Protocol Schema Generation: `/protocols/generate`
+## 5️⃣ Protocol Schema Generation: `/protocols/generate`
 
 Generate ACP (Agentic Commerce Protocol) and UCP (Unified Commerce Protocol) schema instances from enriched product data. Uses an LLM call to extract structured attributes (brand, material, product details, etc.) from the enriched title and description, then merges them into both schema templates.
 

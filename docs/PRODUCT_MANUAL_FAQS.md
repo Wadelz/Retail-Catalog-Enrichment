@@ -18,7 +18,7 @@ By default, FAQs are generated from the enriched product title and description, 
 Upload a product manual PDF through the UI (Advanced Options > Product manual for FAQs) or via the API.
 
 ```
-POST /vlm/manual/extract
+POST /manual/extract
 ```
 
 The extraction pipeline runs entirely within a single request:
@@ -37,7 +37,7 @@ The extraction pipeline runs entirely within a single request:
 Pass the extracted knowledge to the FAQ generation endpoint along with the enriched product data.
 
 ```
-POST /vlm/faqs  (with manual_knowledge parameter)
+POST /faqs  (with manual_knowledge parameter)
 ```
 
 The FAQ prompt receives two distinct inputs:
@@ -62,14 +62,14 @@ Without manual (unchanged):
   enriched product data (title + desc) --> FAQ prompt --> 3-5 basic FAQs
 
 With manual (stateless two-step):
-  Step 1: POST /vlm/manual/extract + PDF + title + categories
+  Step 1: POST /manual/extract + PDF + title + categories
     PDF --> extract text --> chunk --> embed in memory
     --> LLM generates 5-8 product-type-specific queries
     --> retrieve relevant chunks per topic via cosine similarity
     --> return knowledge JSON to client
     --> all vectors freed
 
-  Step 2: POST /vlm/faqs + product data + manual_knowledge JSON
+  Step 2: POST /faqs + product data + manual_knowledge JSON
     FAQ prompt gets BOTH:
       1. enriched product data (title/desc/tags)
       2. manual_knowledge (extracted details per topic)
@@ -104,7 +104,7 @@ In the frontend, the product manual upload is under **Advanced Options**:
 
 ### From the UI
 
-1. Upload a product image and run analysis (FAQs generate from title + description)
+1. Run `/enrich` on a source observation (FAQs generate from title + description)
 2. Upload a product manual PDF under Advanced Options
 3. Run analysis again -- FAQs now include manual-enriched content
 
@@ -117,7 +117,7 @@ curl -s -X POST \
   -F "title=JBL Flip 6 Portable Speaker" \
   -F 'categories=["electronics"]' \
   -F "locale=en-US" \
-  http://localhost:8000/vlm/manual/extract
+  http://localhost:8000/manual/extract
 
 # Response:
 # {
@@ -136,7 +136,7 @@ KNOWLEDGE=$(curl -s -X POST \
   -F "file=@speaker-manual.pdf;type=application/pdf" \
   -F "title=JBL Flip 6 Portable Speaker" \
   -F 'categories=["electronics"]' \
-  http://localhost:8000/vlm/manual/extract | jq -c '.knowledge')
+  http://localhost:8000/manual/extract | jq -c '.knowledge')
 
 curl -X POST \
   -F "title=JBL Flip 6 Portable Speaker" \
@@ -146,7 +146,7 @@ curl -X POST \
   -F 'colors=["black"]' \
   -F "locale=en-US" \
   -F "manual_knowledge=$KNOWLEDGE" \
-  http://localhost:8000/vlm/faqs
+  http://localhost:8000/faqs
 ```
 
 ### Batch Processing
@@ -165,7 +165,7 @@ for product in products/*.json; do
     -F "file=@$PDF" \
     -F "title=$TITLE" \
     -F "categories=$CATS" \
-    http://localhost:8000/vlm/manual/extract | jq -c '.knowledge')
+    http://localhost:8000/manual/extract | jq -c '.knowledge')
 
   # Generate FAQs
   curl -s -X POST \
@@ -173,7 +173,7 @@ for product in products/*.json; do
     -F "description=$DESC" \
     -F "categories=$CATS" \
     -F "manual_knowledge=$KNOWLEDGE" \
-    http://localhost:8000/vlm/faqs
+    http://localhost:8000/faqs
 done
 ```
 
@@ -184,7 +184,7 @@ done
 | **Scope** | Shared across all products | Per-product |
 | **Persistence** | Persistent (Milvus + SQLite) | Stateless (in-memory, freed after response) |
 | **Storage** | Milvus vector DB + SQLite metadata | None -- knowledge returned to client |
-| **Triggered by** | Automatically during `/vlm/analyze` | Explicitly via `/vlm/manual/extract` |
+| **Triggered by** | Automatically during `/enrich` | Explicitly via `/manual/extract` |
 | **Purpose** | Pass/fail compliance decision | Richer FAQ generation |
 | **PDF type** | Policy/regulation documents | Product manuals/spec sheets |
 | **Embedding model** | nv-embedqa-e5-v5 (via Milvus) | nv-embedqa-e5-v5 (in-memory numpy) |
@@ -202,10 +202,8 @@ done
 | File | Purpose |
 |------|---------|
 | `src/backend/product_manual.py` | PDF processing, chunking, embedding, query generation, knowledge extraction |
-| `src/backend/vlm.py` | FAQ generation with optional manual knowledge (`_call_nemotron_generate_faqs`, `_format_manual_knowledge`) |
-| `src/backend/main.py` | `/vlm/manual/extract` and `/vlm/faqs` endpoints |
+| `src/backend/enrich.py` | FAQ generation with optional manual knowledge (`_call_nemotron_generate_faqs`, `_format_manual_knowledge`) |
+| `src/backend/main.py` | `/manual/extract` and `/faqs` endpoints |
 | `src/backend/config.py` | `get_product_manual_config()` |
 | `shared/config/config.yaml` | `product_manual` configuration section |
-| `src/ui/components/AdvancedOptionsCard.tsx` | Manual upload UI |
-| `src/ui/app/page.tsx` | Manual state management and FAQ integration |
 | `tests/test_product_manual_unit.py` | Unit tests (32 tests) |

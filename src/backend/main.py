@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import asyncio
-import base64
 import json
 import logging
 import time
@@ -24,16 +23,14 @@ from typing import Any
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from fastapi.responses import JSONResponse, PlainTextResponse
 import httpx
 from openai import APIConnectionError
 
 from backend.policy import evaluate_policy_compliance
 from backend.policy_library import PolicyLibrary
 from backend.product_manual import process_manual_pdf, generate_manual_queries, extract_manual_knowledge
-from backend.vlm import extract_vlm_observation, extract_rich_product_json, build_enriched_vlm_result, _call_nemotron_generate_faqs, _call_nemotron_extract_schema_fields
-from backend.image import generate_image_variation
-from backend.trellis import generate_3d_asset
+from backend.enrich import build_enriched_result, _call_nemotron_generate_faqs, _call_nemotron_extract_schema_fields
 from backend.web_insights import build_product_web_insights, WebInsightsDependencyError
 from backend.config import get_config
 
@@ -83,10 +80,10 @@ async def health() -> JSONResponse:
 @app.get("/health/nims")
 async def health_nims() -> JSONResponse:
     """
-    Check the health status of all NVIDIA NIM endpoints.
-    
-    Returns the health status of VLM, LLM, FLUX, and TRELLIS services.
-    Each service is checked by calling its /v1/health/ready endpoint.
+    Check the health status of the NVIDIA NIM endpoints this service uses.
+
+    Returns the health status of the LLM and embedding services. Each is
+    checked by calling its /v1/health/ready endpoint.
     """
     logger.debug("GET /health/nims - checking all NIM endpoints")
     global _nim_health_cache, _nim_health_cache_expires_at
@@ -96,7 +93,7 @@ async def health_nims() -> JSONResponse:
         return JSONResponse(_nim_health_cache)
 
     config = get_config()
-    
+
     async def check_service(name: str, base_url: str) -> str:
         """Check if a service is healthy by calling its health endpoint."""
         health_base = base_url.rstrip('/').removesuffix('/infer')
@@ -106,13 +103,13 @@ async def health_nims() -> JSONResponse:
                 response = await client.get(health_url)
                 if response.status_code == 200:
                     data = response.json()
-                    # Check for VLM/LLM format: {"object":"health.response","message":"Service is ready."} or {"object":"health.response","status":"ok"}
+                    # NIM format: {"object":"health.response","message":"Service is ready."} or {"object":"health.response","status":"ok"}
                     if data.get("object") == "health.response":
                         msg = (data.get("message") or "").lower().rstrip(".")
                         if msg == "service is ready" or data.get("status") == "ok":
-                            logger.debug(f"{name} service is healthy (VLM/LLM format)")
+                            logger.debug(f"{name} service is healthy (NIM format)")
                             return "healthy"
-                    # Check for FLUX/TRELLIS format: {"description":"Triton readiness check","status":"ready"}
+                    # Triton format: {"description":"Triton readiness check","status":"ready"}
                     if data.get("status") == "ready":
                         logger.debug(f"{name} service is healthy (Triton format)")
                         return "healthy"
@@ -121,81 +118,76 @@ async def health_nims() -> JSONResponse:
         except Exception as e:
             logger.warning(f"{name} service health check failed: {e}")
             return "unhealthy"
-    
-    # Get all NIM configurations
+
     try:
-        vlm_config = config.get_vlm_config()
         llm_config = config.get_llm_config()
-        flux_config = config.get_flux_config()
-        trellis_config = config.get_trellis_config()
-        
-        # Check all services concurrently
-        vlm_status, llm_status, flux_status, trellis_status = await asyncio.gather(
-            check_service("VLM", vlm_config["url"]),
+        embeddings_config = config.get_embeddings_config()
+
+        llm_status, embeddings_status = await asyncio.gather(
             check_service("LLM", llm_config["url"]),
-            check_service("FLUX", flux_config["url"]),
-            check_service("TRELLIS", trellis_config["url"])
+            check_service("Embeddings", embeddings_config["url"])
         )
-        
+
         result = {
-            "vlm": vlm_status,
             "llm": llm_status,
-            "flux": flux_status,
-            "trellis": trellis_status
+            "embeddings": embeddings_status
         }
         _nim_health_cache = result
         _nim_health_cache_expires_at = time.monotonic() + NIM_HEALTH_CACHE_TTL_SECONDS
-        
+
         logger.debug(f"NIM health check results: {result}")
         return JSONResponse(result)
-        
+
     except Exception as e:
         logger.error(f"Error checking NIM health: {e}")
         return JSONResponse({
-            "vlm": "unhealthy",
             "llm": "unhealthy",
-            "flux": "unhealthy",
-            "trellis": "unhealthy"
+            "embeddings": "unhealthy"
         })
 
-@app.post("/vlm/analyze")
-async def vlm_analyze(
-    image: UploadFile = File(...),
+@app.post("/enrich")
+async def enrich(
+    source_observation: str = Form(...),
     locale: str = Form("en-US"),
     product_data: str = Form(None),
     brand_instructions: str = Form(None)
 ) -> JSONResponse:
-    """
-    Fast endpoint: Analyze image and extract product fields using VLM.
-    
-    This endpoint runs ONLY the VLM analysis (no image generation).
-    Returns fields quickly (~2-5 seconds).
+    """Enrich a product record from text evidence.
+
+    *source_observation* is a JSON object of authoritative observed facts
+    (title, description, categories, tags, colors) -- a supplier feed row, a
+    datasheet extract, a scraped spec table.  *product_data* is the existing
+    catalog entry, if any; it is reconciled against the observation rather
+    than trusted, so stale or conflicting terms are removed.
     """
     try:
         if locale not in VALID_LOCALES:
-            logger.error(f"/vlm/analyze error: invalid locale={locale}")
+            logger.error(f"/enrich error: invalid locale={locale}")
             return JSONResponse({"detail": f"Invalid locale. Supported locales: {sorted(VALID_LOCALES)}"}, status_code=400)
-        
+
+        try:
+            observation = json.loads(source_observation)
+        except Exception as e:
+            logger.error(f"/enrich error: invalid JSON in source_observation: {e}")
+            return JSONResponse({"detail": f"Invalid JSON in source_observation: {e}"}, status_code=400)
+        if not isinstance(observation, dict):
+            return JSONResponse({"detail": "source_observation must be a JSON object"}, status_code=400)
+        if not str(observation.get("title") or "").strip():
+            return JSONResponse({"detail": "source_observation.title is required"}, status_code=400)
+
         product_json = None
         if product_data:
             try:
                 product_json = json.loads(product_data)
-                logger.info(f"Parsed product_data: {product_json}")
             except Exception as e:
-                logger.error(f"/vlm/analyze error: invalid JSON in product_data: {e}")
+                logger.error(f"/enrich error: invalid JSON in product_data: {e}")
                 return JSONResponse({"detail": f"Invalid JSON in product_data: {e}"}, status_code=400)
-        
-        validation_result, error_response = await _validate_image(image, "/vlm/analyze")
-        if error_response:
-            return error_response
-        image_bytes, content_type = validation_result
-        
-        logger.info(f"Running VLM analysis: locale={locale} mode={'augmentation' if product_json else 'generation'}")
-        vlm_observation = await asyncio.to_thread(extract_vlm_observation, image_bytes, content_type, locale)
+
+        logger.info(f"Running enrichment: locale={locale} mode={'reconcile' if product_json else 'generate'}")
 
         enrichment_task = asyncio.to_thread(
-            build_enriched_vlm_result,
-            vlm_observation,
+            build_enriched_result,
+            observation,
             locale,
             product_json,
             brand_instructions,
@@ -203,11 +195,11 @@ async def vlm_analyze(
         retrieval_task = asyncio.to_thread(
             policy_library.retrieve_context,
             {
-                "title": vlm_observation.get("title", ""),
-                "description": vlm_observation.get("description", ""),
-                "categories": vlm_observation.get("categories", []),
-                "tags": vlm_observation.get("tags", []),
-                "colors": vlm_observation.get("colors", []),
+                "title": observation.get("title", ""),
+                "description": observation.get("description", ""),
+                "categories": observation.get("categories", []),
+                "tags": observation.get("tags", []),
+                "colors": observation.get("colors", []),
             },
         )
         result, policy_contexts = await asyncio.gather(enrichment_task, retrieval_task)
@@ -215,11 +207,11 @@ async def vlm_analyze(
             logger.info("Policy retrieval returned %d candidate policy record(s); running compliance evaluation.", len(policy_contexts))
             product_snapshot = {
                 "locale": locale,
-                "title": vlm_observation.get("title", ""),
-                "description": vlm_observation.get("description", ""),
-                "categories": vlm_observation.get("categories", []),
-                "tags": vlm_observation.get("tags", []),
-                "colors": vlm_observation.get("colors", []),
+                "title": observation.get("title", ""),
+                "description": observation.get("description", ""),
+                "categories": observation.get("categories", []),
+                "tags": observation.get("tags", []),
+                "colors": observation.get("colors", []),
                 "generated_catalog_fields": {
                     "title": result.get("title", ""),
                     "description": result.get("description", ""),
@@ -251,7 +243,7 @@ async def vlm_analyze(
                 "warnings": [],
                 "evidence_note": "Policy retrieval did not return any candidate matches for this product.",
             }
-        
+
         payload = {
             "title": result.get("title", ""),
             "description": result.get("description", ""),
@@ -265,22 +257,21 @@ async def vlm_analyze(
             payload["enhanced_product"] = result["enhanced_product"]
         if result.get("policy_decision"):
             payload["policy_decision"] = result["policy_decision"]
-        
-        logger.info(f"/vlm/analyze success: title_len={len(payload['title'])} desc_len={len(payload['description'])} locale={locale}")
+
+        logger.info(f"/enrich success: title_len={len(payload['title'])} desc_len={len(payload['description'])} locale={locale}")
         return JSONResponse(payload)
-        
+
     except (APIConnectionError, httpx.ConnectError) as exc:
-        logger.exception(f"/vlm/analyze connection error: {exc}")
+        logger.exception(f"/enrich connection error: {exc}")
         return JSONResponse({
             "detail": "Unable to connect to the NIM endpoint. Please verify that the NVIDIA NIM container is running."
         }, status_code=503)
     except Exception as exc:
-        logger.exception(f"/vlm/analyze exception: {exc}")
+        logger.exception(f"/enrich exception: {exc}")
         return JSONResponse({"detail": str(exc)}, status_code=500)
 
-
-@app.post("/vlm/faqs")
-async def vlm_faqs(
+@app.post("/faqs")
+async def generate_faqs(
     title: str = Form(""),
     description: str = Form(""),
     categories: str = Form("[]"),
@@ -289,7 +280,7 @@ async def vlm_faqs(
     locale: str = Form("en-US"),
     manual_knowledge: str = Form(""),
 ) -> JSONResponse:
-    """Generate FAQs from enriched product data. Called after /vlm/analyze completes.
+    """Generate FAQs from enriched product data. Called after /enrich completes.
 
     When *manual_knowledge* is provided (JSON dict of topic → text), the FAQ
     prompt uses both the product data and the extracted manual content to
@@ -297,7 +288,7 @@ async def vlm_faqs(
     """
     try:
         if locale not in VALID_LOCALES:
-            logger.error(f"/vlm/faqs error: invalid locale={locale}")
+            logger.error(f"/faqs error: invalid locale={locale}")
             return JSONResponse({"detail": f"Invalid locale. Supported locales: {sorted(VALID_LOCALES)}"}, status_code=400)
 
         enriched = {
@@ -313,7 +304,7 @@ async def vlm_faqs(
             try:
                 parsed_knowledge = json.loads(manual_knowledge)
             except json.JSONDecodeError:
-                logger.warning("/vlm/faqs: invalid manual_knowledge JSON, ignoring")
+                logger.warning("/faqs: invalid manual_knowledge JSON, ignoring")
             else:
                 if not isinstance(parsed_knowledge, dict) or not all(
                     isinstance(value, str) for value in parsed_knowledge.values()
@@ -327,54 +318,17 @@ async def vlm_faqs(
         )
         return JSONResponse({"faqs": faqs})
     except (APIConnectionError, httpx.ConnectError) as exc:
-        logger.exception("/vlm/faqs connection error: %s", exc)
+        logger.exception("/faqs connection error: %s", exc)
         return JSONResponse({
             "detail": "Unable to connect to the NIM endpoint. Please verify that the NVIDIA NIM container is running."
         }, status_code=503)
     except Exception as exc:
-        logger.exception("/vlm/faqs exception: %s", exc)
+        logger.exception("/faqs exception: %s", exc)
         return JSONResponse({"detail": str(exc)}, status_code=500)
 
 
-@app.post("/vlm/rich-product")
-async def vlm_rich_product(
-    image: UploadFile = File(...),
-    locale: str = Form("en-US"),
-) -> JSONResponse:
-    """Return a rich, image-grounded product JSON object from the VLM."""
-    try:
-        if locale not in VALID_LOCALES:
-            logger.error("/vlm/rich-product error: invalid locale=%s", locale)
-            return JSONResponse({"detail": f"Invalid locale. Supported locales: {sorted(VALID_LOCALES)}"}, status_code=400)
-
-        validation_result, error_response = await _validate_image(image, "/vlm/rich-product")
-        if error_response:
-            return error_response
-        image_bytes, content_type = validation_result
-
-        rich_product = await asyncio.to_thread(
-            extract_rich_product_json,
-            image_bytes,
-            content_type,
-            locale,
-        )
-        logger.info("/vlm/rich-product success: keys=%s locale=%s", list(rich_product.keys()), locale)
-        return JSONResponse(rich_product)
-    except ValueError as exc:
-        logger.warning("/vlm/rich-product validation error: %s", exc)
-        return JSONResponse({"detail": str(exc)}, status_code=502)
-    except (APIConnectionError, httpx.ConnectError) as exc:
-        logger.exception("/vlm/rich-product connection error: %s", exc)
-        return JSONResponse({
-            "detail": "Unable to connect to the NIM endpoint. Please verify that the NVIDIA NIM container is running."
-        }, status_code=503)
-    except Exception as exc:
-        logger.exception("/vlm/rich-product exception: %s", exc)
-        return JSONResponse({"detail": str(exc)}, status_code=500)
-
-
-@app.post("/vlm/manual/extract")
-async def vlm_manual_extract(
+@app.post("/manual/extract")
+async def manual_extract(
     file: UploadFile = File(...),
     title: str = Form(""),
     categories: str = Form("[]"),
@@ -435,15 +389,15 @@ async def vlm_manual_extract(
         })
 
     except ValueError as exc:
-        logger.warning("/vlm/manual/extract validation error: %s", exc)
+        logger.warning("/manual/extract validation error: %s", exc)
         return JSONResponse({"detail": str(exc)}, status_code=400)
     except (APIConnectionError, httpx.ConnectError) as exc:
-        logger.exception("/vlm/manual/extract connection error: %s", exc)
+        logger.exception("/manual/extract connection error: %s", exc)
         return JSONResponse({
             "detail": "Unable to connect to the NIM endpoint. Please verify that the NVIDIA NIM container is running."
         }, status_code=503)
     except Exception as exc:
-        logger.exception("/vlm/manual/extract exception: %s", exc)
+        logger.exception("/manual/extract exception: %s", exc)
         return JSONResponse({"detail": str(exc)}, status_code=500)
 
 
@@ -536,92 +490,6 @@ async def clear_policies() -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=500)
 
 
-@app.post("/generate/variation")
-async def generate_variation(
-    image: UploadFile = File(...),
-    locale: str = Form("en-US"),
-    title: str = Form(...),
-    description: str = Form(...),
-    categories: str = Form(...),
-    tags: str = Form("[]"),
-    colors: str = Form("[]"),
-    enhanced_product: str = Form(None)
-) -> JSONResponse:
-    """
-    Slow endpoint: Generate image variation given VLM analysis results.
-    
-    Takes pre-computed fields from /vlm/analyze and generates a new image variation.
-    Returns generated image (~30-60 seconds).
-    """
-    try:
-        if locale not in VALID_LOCALES:
-            logger.error(f"/generate/variation error: invalid locale={locale}")
-            return JSONResponse({"detail": f"Invalid locale. Supported locales: {sorted(VALID_LOCALES)}"}, status_code=400)
-        
-        # Parse JSON fields
-        try:
-            categories_list = json.loads(categories)
-            tags_list = json.loads(tags)
-            colors_list = json.loads(colors)
-        except Exception as e:
-            logger.error(f"/generate/variation error: invalid JSON in fields: {e}")
-            return JSONResponse({"detail": f"Invalid JSON in fields: {e}"}, status_code=400)
-        
-        validation_result, error_response = await _validate_image(image, "/generate/variation")
-        if error_response:
-            return error_response
-        image_bytes, content_type = validation_result
-        
-        logger.info(f"Generating image variation: title_len={len(title)} locale={locale}")
-        result = await generate_image_variation(
-            image_bytes=image_bytes,
-            content_type=content_type,
-            title=title,
-            description=description,
-            categories=categories_list,
-            tags=tags_list,
-            colors=colors_list,
-            locale=locale
-        )
-        
-        payload = {
-            "generated_image_b64": result["generated_image_b64"],
-            "variation_plan": result["variation_plan"],
-            "quality_score": result["quality_score"],
-            "quality_rationale": result["quality_rationale"],
-            "quality_issues": result["quality_issues"],
-            "locale": locale
-        }
-        
-        logger.info(f"/generate/variation success: image_b64_len={len(result['generated_image_b64'])} quality_score={result['quality_score']} issues_count={len(result['quality_issues'])}")
-        return JSONResponse(payload)
-        
-    except (APIConnectionError, httpx.ConnectError) as exc:
-        logger.exception(f"/generate/variation connection error: {exc}")
-        return JSONResponse({
-            "detail": "Unable to connect to the NIM endpoint. Please verify that the NVIDIA FluxNIM container is running."
-        }, status_code=503)
-    except Exception as exc:
-        logger.exception(f"/generate/variation exception: {exc}")
-        return JSONResponse({"detail": str(exc)}, status_code=500)
-
-
-async def _validate_image(image: UploadFile, endpoint: str):
-    logger.info(f"POST {endpoint} filename={getattr(image, 'filename', None)} content_type={getattr(image, 'content_type', None)}")
-    image_bytes = await image.read()
-    
-    if not image_bytes:
-        logger.error(f"{endpoint} error: empty upload")
-        return None, JSONResponse({"detail": "Uploaded file is empty"}, status_code=400)
-    
-    content_type = getattr(image, "content_type", None) or "image/png"
-    if not content_type.startswith("image/"):
-        logger.error(f"{endpoint} error: non-image content_type={content_type}")
-        return None, JSONResponse({"detail": "File must be an image"}, status_code=400)
-    
-    return (image_bytes, content_type), None
-
-
 async def _validate_policy_uploads(policy_files: list[UploadFile], endpoint: str):
     if not policy_files:
         return None, JSONResponse({"detail": "At least one PDF file is required"}, status_code=400)
@@ -656,118 +524,6 @@ async def _validate_policy_uploads(policy_files: list[UploadFile], endpoint: str
         )
 
     return uploads, None
-
-
-@app.post("/generate/3d")
-async def generate_3d(
-    image: UploadFile = File(...),
-    slat_cfg_scale: float = Form(5.0),
-    ss_cfg_scale: float = Form(10.0),
-    slat_sampling_steps: int = Form(50),
-    ss_sampling_steps: int = Form(50),
-    seed: int = Form(0),
-    return_json: bool = Form(False)
-) -> Response:
-    """
-    Generate a 3D GLB asset from a 2D product image using TRELLIS model.
-    
-    This endpoint accepts a product image and returns a 3D GLB file that can be rendered in the UI.
-    Processing time: ~30-120 seconds depending on parameters.
-    
-    Args:
-        image: Product image file (JPEG, PNG)
-        slat_cfg_scale: SLAT configuration scale (default: 5.0)
-        ss_cfg_scale: SS configuration scale (default: 10.0)
-        slat_sampling_steps: SLAT sampling steps (default: 50)
-        ss_sampling_steps: SS sampling steps (default: 50)
-        seed: Random seed for reproducibility (default: 0)
-        return_json: If True, return JSON with base64-encoded GLB; if False, return binary GLB (default: False)
-        
-    Returns:
-        Binary GLB file (model/gltf-binary) or JSON with base64-encoded GLB
-    """
-    try:
-        validation_result, error_response = await _validate_image(image, "/generate/3d")
-        if error_response:
-            return error_response
-        image_bytes, content_type = validation_result
-        
-        logger.info(
-            f"Generating 3D asset: slat_cfg={slat_cfg_scale}, ss_cfg={ss_cfg_scale}, "
-            f"slat_steps={slat_sampling_steps}, ss_steps={ss_sampling_steps}, seed={seed}"
-        )
-        
-        result = await generate_3d_asset(
-            image_bytes=image_bytes,
-            content_type=content_type,
-            slat_cfg_scale=slat_cfg_scale,
-            ss_cfg_scale=ss_cfg_scale,
-            slat_sampling_steps=slat_sampling_steps,
-            ss_sampling_steps=ss_sampling_steps,
-            seed=seed
-        )
-        
-        glb_data = result["glb_data"]
-        artifact_id = result["artifact_id"]
-        metadata = result["metadata"]
-        
-        logger.info(
-            f"/generate/3d success: artifact_id={artifact_id} size={metadata['size_bytes']} bytes"
-        )
-        
-        if return_json:
-            # Return JSON with base64-encoded GLB
-            logger.info(f"Encoding GLB to base64: {len(glb_data)} bytes")
-            glb_b64 = base64.b64encode(glb_data).decode("ascii")
-            b64_size = len(glb_b64)
-            logger.info(f"Base64 encoded: {b64_size} chars (~{b64_size / 1024 / 1024:.2f} MB)")
-            
-            payload = {
-                "glb_base64": glb_b64,
-                "artifact_id": artifact_id,
-                "metadata": metadata
-            }
-            
-            import json as json_module
-            payload_json = json_module.dumps(payload)
-            payload_size = len(payload_json)
-            logger.info(f"Returning JSON response with glb_base64 field (present: {bool(glb_b64)}, approx payload size: {payload_size / 1024 / 1024:.2f} MB)")            
-            
-            return JSONResponse(
-                payload,
-                headers={
-                    "X-GLB-Size-Bytes": str(metadata['size_bytes']),
-                    "X-Artifact-ID": artifact_id
-                }
-            )
-        else:
-            # Return binary GLB file
-            return Response(
-                content=glb_data,
-                media_type="model/gltf-binary",
-                headers={
-                    "Content-Disposition": f'attachment; filename="product_3d_{artifact_id}.glb"'
-                }
-            )
-        
-    except httpx.ConnectError as exc:
-        logger.exception(f"/generate/3d connection error: {exc}")
-        return JSONResponse({
-            "detail": "Unable to connect to the TRELLIS 3D generation endpoint. Please verify that the service is running and configured correctly."
-        }, status_code=503)
-    except httpx.TimeoutException as exc:
-        logger.exception(f"/generate/3d timeout error: {exc}")
-        return JSONResponse({
-            "detail": "3D generation request timed out. The model may be overloaded or the image may be too complex."
-        }, status_code=504)
-    except httpx.HTTPStatusError as exc:
-        logger.exception(f"/generate/3d HTTP error: {exc}")
-        return JSONResponse({
-            "detail": f"3D generation service returned an error: {exc.response.status_code}"
-        }, status_code=exc.response.status_code)
-    except Exception as exc:
-        logger.exception(f"/generate/3d exception: {exc}")
-        return JSONResponse({"detail": str(exc)}, status_code=500)
 
 
 # ---------------------------------------------------------------------------
