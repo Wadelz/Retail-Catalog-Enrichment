@@ -40,6 +40,23 @@ pip install arize-phoenix
 phoenix serve
 ```
 
+## Hosted Phoenix Cloud
+
+A local collector is only reachable from the machine it runs on. To view traces
+from a remote or containerised deployment, point the exporter at hosted Phoenix
+instead:
+
+```bash
+export TRACING_ENABLED=true
+export PHOENIX_COLLECTOR_ENDPOINT=https://app.phoenix.arize.com
+export PHOENIX_API_KEY=...   # from app.phoenix.arize.com -> Settings -> API Keys
+```
+
+No code changes are needed. `phoenix.otel.register()` falls back to the
+`PHOENIX_API_KEY` environment variable when no `api_key` argument is passed, and
+sets the `authorization: Bearer …` header itself. Keep the key in `.env` or your
+secret store — it must never be committed.
+
 ## Configuration
 
 Settings resolve as **environment variable → `shared/config/config.yaml` → built-in
