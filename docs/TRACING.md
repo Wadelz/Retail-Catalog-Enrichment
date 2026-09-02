@@ -23,39 +23,71 @@ hand-written spans.
 
 ## Quick start
 
-Bring up the collector and point the backend at it:
+The compose network is declared `external`, so create it once if you have not
+already, then bring up the collector:
 
 ```bash
+docker network create catalog-network || true
+
+# The phoenix service enables auth by default and will not start without this.
+echo "PHOENIX_SECRET=$(openssl rand -hex 32)" >> .env
+
 docker compose up -d phoenix
-export TRACING_ENABLED=true
 ```
 
-Then open the Phoenix UI at <http://localhost:6006> and trigger any enrichment
-request. Spans appear under the project name `catalog-enrichment`.
-
-For local development without Docker, Phoenix can also run from pip:
+Log in at <http://localhost:6006>, create a system key under **Settings → API
+Keys**, and put it in `.env` so the exporter can authenticate:
 
 ```bash
-pip install arize-phoenix
+TRACING_ENABLED=true
+PHOENIX_API_KEY=<the system key>
+```
+
+Trigger any enrichment request and spans appear under the project
+`catalog-enrichment`.
+
+For a collector reachable from nothing but localhost, `PHOENIX_ENABLE_AUTH=false`
+skips the secret and key entirely. Do not do this for anything exposed — see
+[Exposing the collector](#exposing-the-collector).
+
+Phoenix can also run from pip, but **only on Python 3.12+** — on 3.11 it fails at
+import with `ValueError: mutable default <class 'mappingproxy'>`. The Docker
+image bundles its own interpreter and avoids the question:
+
+```bash
+pip install arize-phoenix   # Python 3.12+ only
 phoenix serve
 ```
 
-## Hosted Phoenix Cloud
+## Exposing the collector
 
-A local collector is only reachable from the machine it runs on. To view traces
-from a remote or containerised deployment, point the exporter at hosted Phoenix
-instead:
+A local collector is reachable only from the machine it runs on. To see traces
+from a remote or containerised backend, either tunnel to a local Phoenix:
 
 ```bash
-export TRACING_ENABLED=true
-export PHOENIX_COLLECTOR_ENDPOINT=https://app.phoenix.arize.com
-export PHOENIX_API_KEY=...   # from app.phoenix.arize.com -> Settings -> API Keys
+cloudflared tunnel --url http://localhost:6006
+export PHOENIX_COLLECTOR_ENDPOINT=https://<tunnel-host>/v1/traces
 ```
 
-No code changes are needed. `phoenix.otel.register()` falls back to the
-`PHOENIX_API_KEY` environment variable when no `api_key` argument is passed, and
-sets the `authorization: Bearer …` header itself. Keep the key in `.env` or your
-secret store — it must never be committed.
+…or use hosted Phoenix Cloud, which is **hostname-scoped per space** (not a
+shared host with a path prefix):
+
+```bash
+export PHOENIX_COLLECTOR_ENDPOINT=https://<your-space>.arize.com/v1/traces
+export PHOENIX_API_KEY=...
+```
+
+**Keep auth on for anything exposed.** A tunnel URL is public to anyone holding
+it, and spans carry full prompts and model completions. Note that
+`phoenix-demo.arize.com` is a public read-only demo: it returns `403 The Phoenix
+REST API is disabled in read-only mode` for every write, so traces sent there are
+silently dropped.
+
+No code change is needed for auth. `phoenix.otel.register()` falls back to the
+`PHOENIX_API_KEY` environment variable when no `api_key` argument is passed and
+sets the `authorization: Bearer …` header itself; the startup banner shows
+`Transport Headers: {'authorization': '****'}` when it took effect. Keep the key
+in `.env` or a secret store — it must never be committed.
 
 ## Configuration
 

@@ -78,6 +78,17 @@ services:
       - "4317:4317"
     environment:
       - PHOENIX_WORKING_DIR=/mnt/data
+      # Auth defaults ON. Traces carry full prompts and completions, so an
+      # instance reachable beyond localhost -- a tunnel, a LAN, a cloud host --
+      # must not be readable and writable by anyone holding the URL.
+      #
+      # PHOENIX_SECRET has no default on purpose. Left unset, only this
+      # container fails to start, and Phoenix's own log says why; a `:?`
+      # default would instead abort every compose command, so `docker compose
+      # up backend` would break for anyone who never wanted tracing.
+      # Generate one with: openssl rand -hex 32
+      - PHOENIX_ENABLE_AUTH=${PHOENIX_ENABLE_AUTH:-true}
+      - PHOENIX_SECRET=${PHOENIX_SECRET:-}
     volumes:
       - phoenix-data:/mnt/data
     restart: unless-stopped
