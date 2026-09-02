@@ -109,6 +109,31 @@ manual CHAIN span there would duplicate that structure.
 Applying the decorators is safe when tracing is off: the tracer resolves to a
 no-op provider and the functions run untouched.
 
+## Querying traces from Claude Code (MCP)
+
+`.mcp.json` registers the Phoenix MCP server, so an agent session can read this
+project's traces directly instead of you clicking through the UI — "which spans
+errored today", "show me the slowest trace", "what did the VLM return on that
+failed call".
+
+It reads three variables from your environment:
+
+```bash
+PHOENIX_BASE_URL=http://localhost:6006   # site root, NOT the /v1/traces endpoint
+PHOENIX_API_KEY=<system key>
+PHOENIX_PROJECT_NAME=catalog-enrichment
+```
+
+The key is referenced, never inlined — `.mcp.json` is committed, so a literal key
+there would be a leak.
+
+**It is not read-only.** Alongside the read tools (`list-traces`, `get-trace`,
+`get-spans`, `list-projects`, `list-sessions`, dataset and experiment queries) it
+exposes `upsert-prompt` and `add-dataset-examples`, which write to your Phoenix.
+
+MCP servers are loaded when a session starts, so a running session will not pick
+this up until it is restarted.
+
 ## Exposing the collector
 
 A local collector is reachable only from the machine it runs on. To see traces
