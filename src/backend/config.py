@@ -54,11 +54,31 @@ class Config:
     def _get_optional_section_config(self, section: str) -> Dict[str, Any]:
         return self._config_data.get(section, {}) or {}
         
+    def _get_nim_section_config(self, section: str, model_env: str) -> Dict[str, str]:
+        """Resolve a NIM-backed section, letting the environment redirect it.
+
+        config.yaml carries the self-hosted defaults, where each model name
+        matches its NIM container image. Setting NVIDIA_API_BASE_URL points the
+        section at NVIDIA's hosted endpoint instead, and the per-section model
+        variable selects a catalog id where it differs from the container's --
+        hosted embeddings, for instance, publish no nv-embedqa-e5-v5, so the
+        self-hosted default cannot also serve the hosted path.
+
+        Both keys stay required in config.yaml, so a missing section still
+        fails loudly rather than silently falling back to an endpoint the
+        caller did not ask for.
+        """
+        config = self._get_section_config(section, ['url', 'model'])
+        return {
+            "url": os.getenv("NVIDIA_API_BASE_URL") or config["url"],
+            "model": os.getenv(model_env) or config["model"],
+        }
+
     def get_vlm_config(self) -> Dict[str, str]:
-        return self._get_section_config('vlm', ['url', 'model'])
-        
+        return self._get_nim_section_config('vlm', 'VLM_MODEL')
+
     def get_llm_config(self) -> Dict[str, str]:
-        return self._get_section_config('llm', ['url', 'model'])
+        return self._get_nim_section_config('llm', 'LLM_MODEL')
         
     def get_flux_config(self) -> Dict[str, str]:
         return self._get_section_config('flux', ['url'])
@@ -70,7 +90,7 @@ class Config:
         config = self._get_optional_section_config('embeddings')
         return {
             "url": os.getenv("NVIDIA_API_BASE_URL") or config.get("url") or "https://integrate.api.nvidia.com/v1",
-            "model": config.get("model") or "nvidia/nv-embedqa-e5-v5",
+            "model": os.getenv("EMBEDDINGS_MODEL") or config.get("model") or "nvidia/nv-embedqa-e5-v5",
         }
 
     def get_milvus_config(self) -> Dict[str, Any]:

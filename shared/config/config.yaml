@@ -7,7 +7,7 @@ vlm:
 
 llm:
   url: "http://nim-llm:8000/v1"
-  model: "nvidia/nemotron-3.5-lightning"
+  model: "nvidia/nemotron-3.5-lightning-30b-a3b"
 
 flux:
   url: "http://nim-flux:8000/v1/infer"
