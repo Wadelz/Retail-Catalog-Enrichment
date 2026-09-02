@@ -78,6 +78,15 @@ reach the process.
 **`arize-phoenix-otel not installed`.** The tracing dependencies are declared in
 `pyproject.toml`; run `uv sync` (or `pip install -e .`) to pick them up.
 
+**Startup logs `Phoenix tracing unavailable (mutable default <class 'mappingproxy'> ...)`.**
+This appears when the full `arize-phoenix` *server* package is installed into
+the same environment on Python 3.11: importing `phoenix.otel` executes the
+phoenix package body, which pulls in `phoenix.trace.dsl` and fails on that
+interpreter. The backend only needs `arize-phoenix-otel` (the lightweight
+exporter), which is what `pyproject.toml` declares — uninstall `arize-phoenix`
+from the app environment and run the collector from the Docker image instead.
+Tracing is skipped in this case; the API still starts and serves normally.
+
 **Spans stop at the LLM call for web insights.** That path goes through
 LangChain, not the raw SDK. If only `openai` shows in the `instrumented=` list at
 startup, `openinference-instrumentation-langchain` is missing.

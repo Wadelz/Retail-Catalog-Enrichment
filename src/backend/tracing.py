@@ -42,21 +42,32 @@ _tracer_provider: Optional[Any] = None
 def _instrument_openai(tracer_provider: Any) -> bool:
     try:
         from openinference.instrumentation.openai import OpenAIInstrumentor
+
+        OpenAIInstrumentor().instrument(tracer_provider=tracer_provider)
+        return True
     except ImportError:
         logger.warning("openinference-instrumentation-openai not installed; raw OpenAI SDK calls will not be traced")
         return False
-    OpenAIInstrumentor().instrument(tracer_provider=tracer_provider)
-    return True
+    except Exception as exc:
+        # Importing a third-party package runs its module body, which can fail
+        # for reasons that are not ImportError (an incompatible interpreter, a
+        # bad transitive dependency). None of that may reach startup.
+        logger.warning(f"OpenAI instrumentation unavailable ({exc}); those calls will not be traced")
+        return False
 
 
 def _instrument_langchain(tracer_provider: Any) -> bool:
     try:
         from openinference.instrumentation.langchain import LangChainInstrumentor
+
+        LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
+        return True
     except ImportError:
         logger.warning("openinference-instrumentation-langchain not installed; the web-insights agent will not be traced")
         return False
-    LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
-    return True
+    except Exception as exc:
+        logger.warning(f"LangChain instrumentation unavailable ({exc}); the web-insights agent will not be traced")
+        return False
 
 
 def setup_tracing() -> bool:
@@ -77,6 +88,15 @@ def setup_tracing() -> bool:
         from phoenix.otel import register
     except ImportError:
         logger.warning("arize-phoenix-otel not installed; tracing is disabled. Install it with: uv sync")
+        return False
+    except Exception as exc:
+        # Importing `phoenix.otel` executes the phoenix package body. If the
+        # full `arize-phoenix` server package is also installed, that pulls in
+        # modules which can raise on an unsupported interpreter -- observed as
+        # `ValueError: mutable default <class 'mappingproxy'>` on Python 3.11
+        # with arize-phoenix 20.5.0. A broken observability install must not
+        # take the API down with it.
+        logger.warning(f"Phoenix tracing unavailable ({exc}); continuing without tracing")
         return False
 
     try:

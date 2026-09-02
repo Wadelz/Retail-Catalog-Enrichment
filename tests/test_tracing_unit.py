@@ -19,6 +19,8 @@ Unit tests for Phoenix tracing configuration and setup in tracing.py module.
 Tracing is optional and additive, so these tests focus on the property that
 matters most: no tracing failure may ever propagate into application startup.
 """
+import builtins
+
 import yaml
 import pytest
 
@@ -119,6 +121,50 @@ class TestSetupTracing:
         assert tracing.setup_tracing() is False
         assert tracing._tracer_provider is None
 
+    def test_import_error_that_is_not_importerror_does_not_raise(self, monkeypatch):
+        """Regression: importing phoenix.otel runs the phoenix package body.
+
+        With the full `arize-phoenix` server package installed alongside, that
+        body raised `ValueError: mutable default <class 'mappingproxy'>` on
+        Python 3.11, which escaped setup_tracing and killed API startup.
+        Catching only ImportError is not enough.
+        """
+        monkeypatch.setattr(tracing, "get_config", lambda: _Cfg(True))
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "phoenix.otel":
+                raise ValueError("mutable default <class 'mappingproxy'>")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        assert tracing.setup_tracing() is False
+        assert tracing._tracer_provider is None
+
+    def test_instrumentor_failure_does_not_raise(self, monkeypatch):
+        """A broken instrumentor degrades that one path, not the whole app."""
+        monkeypatch.setattr(tracing, "get_config", lambda: _Cfg(True))
+        monkeypatch.setattr(tracing, "_instrument_openai", lambda tp: False)
+        monkeypatch.setattr(tracing, "_instrument_langchain", lambda tp: False)
+
+        import phoenix.otel
+
+        monkeypatch.setattr(phoenix.otel, "register", lambda **kw: _FakeProvider())
+        assert tracing.setup_tracing() is True
+
+    def test_instrument_helpers_swallow_non_import_errors(self, monkeypatch):
+        """The helpers themselves must not propagate a module-body failure."""
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name.startswith("openinference.instrumentation"):
+                raise RuntimeError("incompatible interpreter")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        assert tracing._instrument_openai(None) is False
+        assert tracing._instrument_langchain(None) is False
+
     def test_setup_is_idempotent(self, monkeypatch):
         monkeypatch.setattr(tracing, "get_config", lambda: _Cfg(True))
         sentinel = object()
@@ -156,6 +202,16 @@ class TestSetupTracing:
         tracing._tracer_provider = Provider()
         tracing.shutdown_tracing()
         assert tracing._tracer_provider is None
+
+
+class _FakeProvider:
+    """Stands in for the TracerProvider register() returns."""
+
+    def force_flush(self):
+        pass
+
+    def shutdown(self):
+        pass
 
 
 class _Cfg:
