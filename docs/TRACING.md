@@ -59,6 +59,56 @@ pip install arize-phoenix   # Python 3.12+ only
 phoenix serve
 ```
 
+## Chain spans: grouping a multi-step operation
+
+The instrumentors alone produce one span per LLM call, all at the root of the
+trace. A single enrichment can make several calls, and flat spans give no way to
+tell which belong to the same operation or where the time went.
+
+`@tracer.chain` wraps an orchestrating function in a CHAIN span so its LLM calls
+nest beneath it:
+
+```
+extract_vlm_observation          CHAIN    1.57s
+  └─ ChatCompletion              LLM      1.55s
+```
+
+Currently decorated — the functions that coordinate more than one model step:
+
+| Module | Function |
+| --- | --- |
+| `vlm.py` | `extract_vlm_observation`, `extract_rich_product_json`, `build_enriched_vlm_result`, `_call_nemotron_enhance` |
+| `policy.py` | `evaluate_policy_compliance` |
+| `product_manual.py` | `process_manual_pdf`, `extract_manual_knowledge` |
+| `image.py` | `generate_image_variation` |
+| `reflection.py` | `evaluate_image_quality` |
+
+To add another, import the tracer and decorate:
+
+```python
+from backend.tracing import tracer
+
+@tracer.chain
+def my_orchestrator(...):
+    ...
+```
+
+The decorator sets the span kind, `input.value`/`output.value`, and terminal
+status automatically, so it cannot emit the `UNSET`/incomplete spans a
+hand-rolled span easily does. It returns the function's value unchanged and lets
+exceptions propagate — a failure is recorded on the span, not swallowed.
+
+**Do not decorate a function whose only job is one LLM call.** The instrumentor
+already produces that span; wrapping it adds a redundant parent. Decorate the
+function that *coordinates* steps.
+
+`web_insights.py` is deliberately undecorated: its deepagents/LangGraph agent
+emits its own chain and tool spans through the LangChain instrumentor, and a
+manual CHAIN span there would duplicate that structure.
+
+Applying the decorators is safe when tracing is off: the tracer resolves to a
+no-op provider and the functions run untouched.
+
 ## Exposing the collector
 
 A local collector is reachable only from the machine it runs on. To see traces

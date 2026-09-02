@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from backend.config import get_config
 from backend.utils import parse_llm_json
+from backend.tracing import tracer
 
 load_dotenv()
 
@@ -114,6 +115,7 @@ def _count_message_images(messages: list[Dict[str, Any]]) -> int:
     return count
 
 
+@tracer.chain
 def evaluate_image_quality(
     original_image_bytes: bytes,
     generated_image_bytes: bytes,

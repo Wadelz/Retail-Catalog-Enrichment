@@ -35,6 +35,7 @@ from openai import OpenAI
 from backend.config import get_config
 from backend.utils import parse_llm_json
 from backend.reflection import evaluate_image_quality
+from backend.tracing import tracer
 
 load_dotenv()
 

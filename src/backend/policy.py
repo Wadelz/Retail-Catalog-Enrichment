@@ -24,6 +24,7 @@ from pypdf import PdfReader
 
 from backend.config import get_config
 from backend.utils import parse_llm_json
+from backend.tracing import tracer
 
 logger = logging.getLogger("catalog_enrichment.policy")
 
@@ -335,6 +336,7 @@ Rules:
     return parse_llm_json(text, extract_braces=True, strip_comments=True)
 
 
+@tracer.chain
 def evaluate_policy_compliance(
     product_snapshot: Dict[str, Any],
     policy_context: List[Dict[str, Any]],

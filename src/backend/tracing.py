@@ -39,6 +39,45 @@ logger = logging.getLogger("catalog_enrichment.tracing")
 _tracer_provider: Optional[Any] = None
 
 
+class _NoOpTracer:
+    """Stand-in tracer whose decorators pass functions through untouched.
+
+    Modules decorate their orchestrators at import time, long before
+    `setup_tracing()` runs, so importing this module must never fail. If
+    openinference is missing or unimportable, decorated functions still need
+    to be plain functions rather than an AttributeError at import.
+    """
+
+    def __getattr__(self, _name: str) -> Any:
+        def passthrough(*args: Any, **kwargs: Any) -> Any:
+            # Supports both bare `@tracer.chain` and called `@tracer.chain(...)`.
+            if len(args) == 1 and callable(args[0]) and not kwargs:
+                return args[0]
+            return lambda func: func
+
+        return passthrough
+
+
+def _build_tracer() -> Any:
+    try:
+        from opentelemetry import trace as otel_trace
+        from openinference.instrumentation import OITracer, TraceConfig
+
+        # get_tracer() returns a proxy while no provider is registered, and it
+        # resolves to whichever provider setup_tracing() installs later. That
+        # is what lets these decorators be applied at import time and still
+        # emit spans -- and produce nothing at all when tracing stays off.
+        return OITracer(otel_trace.get_tracer(__name__), config=TraceConfig())
+    except Exception as exc:  # pragma: no cover - depends on the install
+        logger.warning(f"openinference tracer unavailable ({exc}); chain spans disabled")
+        return _NoOpTracer()
+
+
+#: Decorate an orchestrating function with ``@tracer.chain`` to group the LLM
+#: calls it makes under one span. Safe to apply whether or not tracing is on.
+tracer = _build_tracer()
+
+
 def _instrument_openai(tracer_provider: Any) -> bool:
     try:
         from openinference.instrumentation.openai import OpenAIInstrumentor

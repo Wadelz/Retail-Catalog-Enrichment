@@ -31,6 +31,7 @@ from openai import OpenAI
 
 from backend.config import get_config
 from backend.policy import extract_text_from_pdf_bytes
+from backend.tracing import tracer
 
 logger = logging.getLogger("catalog_enrichment.product_manual")
 
@@ -161,6 +162,7 @@ class ProductManualContext:
 # PDF → ProductManualContext
 # ---------------------------------------------------------------------------
 
+@tracer.chain
 def process_manual_pdf(pdf_bytes: bytes, filename: str) -> "ProductManualContext":
     """Extract text from a PDF, chunk it, embed it, and return a context object."""
     config = get_config().get_product_manual_config()
@@ -277,6 +279,7 @@ Example: [{{"topic": "battery_life", "query": "..."}}]"""
 # Targeted knowledge extraction
 # ---------------------------------------------------------------------------
 
+@tracer.chain
 def extract_manual_knowledge(
     ctx: ProductManualContext,
     queries: List[Dict[str, str]],

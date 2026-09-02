@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from backend.config import get_config
 from backend.utils import parse_llm_json
+from backend.tracing import tracer
 
 load_dotenv()
 
@@ -1106,6 +1107,7 @@ Example: {{"brand": "...", "condition": "new", "material": null, "age_group": "a
         return {}
 
 
+@tracer.chain
 def _call_nemotron_enhance(
     vlm_output: Dict[str, Any], 
     product_data: Optional[Dict[str, Any]] = None,
@@ -1216,6 +1218,7 @@ def _call_vlm(image_bytes: bytes, content_type: str, locale: str = "en-US") -> D
     return _call_nemotron_structure_vlm(text.strip(), locale)
 
 
+@tracer.chain
 def extract_rich_product_json(image_bytes: bytes, content_type: str, locale: str = "en-US") -> Dict[str, Any]:
     """Ask the VLM for a rich, visually grounded product JSON object."""
     if not image_bytes:
@@ -1432,6 +1435,7 @@ Return ONLY valid JSON:
     return {"title": "", "description": vlm_text, "categories": ["uncategorized"], "tags": [], "colors": []}
 
 
+@tracer.chain
 def extract_vlm_observation(image_bytes: bytes, content_type: str, locale: str = "en-US") -> Dict[str, Any]:
     """Run only the raw VLM observation step."""
     if not image_bytes:
@@ -1449,6 +1453,7 @@ def extract_vlm_observation(image_bytes: bytes, content_type: str, locale: str =
     return vlm_result
 
 
+@tracer.chain
 def build_enriched_vlm_result(
     vlm_result: Dict[str, Any],
     locale: str = "en-US",

@@ -204,6 +204,72 @@ class TestSetupTracing:
         assert tracing._tracer_provider is None
 
 
+class TestChainTracer:
+    """Tests for the module-level `tracer` used by @tracer.chain decorators."""
+
+    def test_tracer_exposes_chain(self):
+        assert hasattr(tracing.tracer, "chain")
+
+    def test_decorating_preserves_behaviour(self):
+        """A decorated function must return exactly what it returned before."""
+
+        @tracing.tracer.chain
+        def enrich(value: str) -> str:
+            return f"enriched:{value}"
+
+        assert enrich("kettle") == "enriched:kettle"
+
+    def test_decorating_propagates_exceptions(self):
+        """Tracing records failures; it must not swallow them."""
+
+        @tracing.tracer.chain
+        def boom() -> None:
+            raise ValueError("upstream failed")
+
+        with pytest.raises(ValueError, match="upstream failed"):
+            boom()
+
+    def test_noop_tracer_bare_decorator(self):
+        """@tracer.chain with no parentheses returns the function untouched."""
+        noop = tracing._NoOpTracer()
+
+        def fn(x):
+            return x * 2
+
+        assert noop.chain(fn) is fn
+        assert noop.chain(fn)(3) == 6
+
+    def test_noop_tracer_called_decorator(self):
+        """@tracer.chain(name=...) also has to pass through."""
+        noop = tracing._NoOpTracer()
+
+        def fn(x):
+            return x + 1
+
+        assert noop.chain(name="custom")(fn) is fn
+
+    def test_noop_tracer_covers_other_span_kinds(self):
+        noop = tracing._NoOpTracer()
+
+        def fn():
+            return "ok"
+
+        for kind in ("chain", "tool", "agent", "llm", "retriever"):
+            assert getattr(noop, kind)(fn) is fn
+
+    def test_build_tracer_falls_back_when_openinference_missing(self, monkeypatch):
+        """A missing instrumentation package must not break module import."""
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name.startswith("openinference"):
+                raise ImportError("not installed")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        assert isinstance(tracing._build_tracer(), tracing._NoOpTracer)
+
+
 class _FakeProvider:
     """Stands in for the TracerProvider register() returns."""
 
