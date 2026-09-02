@@ -36,6 +36,7 @@ from backend.image import generate_image_variation
 from backend.trellis import generate_3d_asset
 from backend.web_insights import build_product_web_insights, WebInsightsDependencyError
 from backend.config import get_config
+from backend.tracing import setup_tracing, shutdown_tracing
 
 load_dotenv()
 
@@ -52,9 +53,13 @@ async def lifespan(app: FastAPI):
     if not logging.getLogger().handlers:
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    # Before policy_library.initialize(), which builds an embeddings client:
+    # instrumentors must be installed ahead of the first LLM client.
+    setup_tracing()
     policy_library.initialize()
     logger.info("App startup complete")
     yield
+    shutdown_tracing()
 
 app = FastAPI(lifespan=lifespan)
 

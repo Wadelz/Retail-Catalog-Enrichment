@@ -116,6 +116,23 @@ class Config:
             ),
         }
 
+    def get_tracing_config(self) -> Dict[str, Any]:
+        config = self._get_optional_section_config('tracing')
+        enabled = os.getenv("TRACING_ENABLED")
+        if enabled is None:
+            enabled_value = bool(config.get("enabled", False))
+        else:
+            enabled_value = enabled.strip().lower() in ("1", "true", "yes", "on")
+        return {
+            "enabled": enabled_value,
+            "endpoint": os.getenv("PHOENIX_COLLECTOR_ENDPOINT")
+            or config.get("endpoint")
+            or "http://localhost:6006/v1/traces",
+            "project_name": os.getenv("PHOENIX_PROJECT_NAME")
+            or config.get("project_name")
+            or "catalog-enrichment",
+        }
+
 
 _config_instance: Optional[Config] = None
 

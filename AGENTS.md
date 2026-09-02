@@ -15,6 +15,7 @@ This document provides guidelines and instructions for AI assistants working on 
 - **[docs/PRD.md](docs/PRD.md)** - Product requirements document
 - **[docs/POLICY_COMPLIANCE.md](docs/POLICY_COMPLIANCE.md)** - Policy compliance feature guide
 - **[docs/PRODUCT_MANUAL_FAQS.md](docs/PRODUCT_MANUAL_FAQS.md)** - Product manual PDF for FAQ enrichment guide
+- **[docs/TRACING.md](docs/TRACING.md)** - Arize Phoenix LLM tracing setup and configuration
 - **[AGENTS.md](AGENTS.md)** - This file (AI assistant guidelines)
 
 ### Current Status

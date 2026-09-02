@@ -28,6 +28,9 @@ services:
       - EXA_API_KEY=${EXA_API_KEY:-}
       - MILVUS_HOST=${MILVUS_HOST:-milvus-standalone}
       - MILVUS_PORT=${MILVUS_PORT:-19530}
+      - TRACING_ENABLED=${TRACING_ENABLED:-false}
+      - PHOENIX_COLLECTOR_ENDPOINT=${PHOENIX_COLLECTOR_ENDPOINT:-http://phoenix:6006/v1/traces}
+      - PHOENIX_PROJECT_NAME=${PHOENIX_PROJECT_NAME:-catalog-enrichment}
     volumes:
       - ./data/outputs:/app/data/outputs
       - ./data/policies:/app/data/policies
@@ -59,6 +62,24 @@ services:
       - NEXT_PUBLIC_BACKEND_URL=/api
     depends_on:
       - backend
+    restart: unless-stopped
+    networks:
+      - catalog-network
+
+  # Arize Phoenix - OpenTelemetry trace collector and UI for LLM observability.
+  # Optional: the backend exports traces only when TRACING_ENABLED=true, and it
+  # deliberately does not depend_on this service so tracing can never delay or
+  # block API startup.
+  phoenix:
+    image: arizephoenix/phoenix:version-20.5.0
+    container_name: catalog-enrichment-phoenix
+    ports:
+      - "6006:6006"
+      - "4317:4317"
+    environment:
+      - PHOENIX_WORKING_DIR=/mnt/data
+    volumes:
+      - phoenix-data:/mnt/data
     restart: unless-stopped
     networks:
       - catalog-network
@@ -207,4 +228,6 @@ networks:
 
 volumes:
   nim-cache:
+    driver: local
+  phoenix-data:
     driver: local

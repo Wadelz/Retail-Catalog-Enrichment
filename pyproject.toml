@@ -25,6 +25,9 @@ dependencies = [
   "langgraph-checkpoint>=3.0.0",
   "langchain-openai==1.1.14",
   "exa-py==2.12.1",
+  "arize-phoenix-otel==0.17.1",
+  "openinference-instrumentation-openai==0.1.57",
+  "openinference-instrumentation-langchain==0.1.73",
 ]
 
 [tool.hatch.build.targets.wheel]

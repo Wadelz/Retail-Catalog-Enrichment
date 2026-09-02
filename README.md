@@ -40,6 +40,7 @@ A GenAI-powered catalog enrichment system that transforms basic product images i
 - **[Policy Compliance](docs/POLICY_COMPLIANCE.md)** - How policy compliance checking works
 - **[Product Manual for FAQs](docs/PRODUCT_MANUAL_FAQS.md)** - How product manual PDFs enrich FAQ generation
 - **[Product Web Insights](docs/WEB_INSIGHTS.md)** - Proposed Deep Agents + Exa product research feature
+- **[LLM Tracing](docs/TRACING.md)** - Arize Phoenix tracing for LLM observability
 - **[AI Agent Guidelines](AGENTS.md)** - Instructions for AI assistants working on this project
 
 ## Tech Stack

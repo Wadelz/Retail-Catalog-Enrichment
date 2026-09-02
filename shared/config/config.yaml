@@ -43,3 +43,8 @@ web_insights:
   min_sources: 2
   search_type: "auto"
   highlights_max_characters: 4000
+
+tracing:
+  enabled: false
+  endpoint: "http://phoenix:6006/v1/traces"
+  project_name: "catalog-enrichment"
