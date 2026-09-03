@@ -73,28 +73,59 @@ debugging anything else.
 **The tunnel dies with the process.** Nothing here survives the container being
 reclaimed.
 
-## Egress policy can block tunnels outright — check before promising one
+## Which direction the tunnel must run — measured, not assumed
 
-The container's egress proxy enforces an organization policy, and **tunnel hosts
-can be denied by it**. This is not hypothetical: a working
-`trycloudflare.com` tunnel in one session was later refused with
-`connect_rejected (the egress proxy denied the CONNECT)` after a restart, with
-no change on the tunnel's side.
+**A tunnel agent cannot run from this container if it needs a port other than
+443.** Outbound egress here is a 443 proxy, and tunnel agents do not all use
+443:
 
-So verify reachability before telling the user a tunnel will work:
+| Agent | Control port | Works from this container |
+| --- | --- | --- |
+| ngrok (`connect.ngrok-agent.com`) | 443 | reachable |
+| cloudflared (`*.v2.argotunnel.com`) | **7844** | **blocked** |
 
-```bash
-curl -sS "$HTTPS_PROXY/__agentproxy/status"   # recentRelayFailures names blocked hosts
+That is why this skill is built on ngrok rather than cloudflared, despite
+cloudflared quick tunnels needing no account. A `cloudflared tunnel --url` run
+here fails its own precheck:
+
+```
+ERROR: Allow outbound TCP on port 7844.
+UDP Connectivity  ... QUIC connection failed     status=fail
+TCP Connectivity  ... blocked or unreachable     status=fail
 ```
 
-A `connect_rejected` for the tunnel host means the policy blocks it, not that
-the tunnel is broken. Retrying, reinstalling, or switching tunnel providers will
-not fix a policy denial — say so, and fall back to running the service on the
-user's own machine instead.
+The public hostname is still issued, so it *looks* like it worked — every
+request then returns **HTTP 530**, because the edge has no registered
+connection behind it.
 
-Note the direction that still works: this container can *reach out* to a service
-the user exposes from their laptop. When outbound is permitted but inbound is
-blocked, put the tunnel on their side, not this one.
+**Check the agent's control port, not the hostname.** Probing
+`argotunnel.com:443` succeeds and proves nothing, because the tunnel protocol
+does not run on 443. Probe the port the agent actually dials:
+
+```bash
+timeout 10 bash -c 'exec 3<>/dev/tcp/region1.v2.argotunnel.com/7844' \
+  && echo reachable || echo blocked
+```
+
+**Prefer the other direction whenever it is available.** Outbound from this
+container is permitted, so a service the user exposes from their own machine is
+reachable from here — with cloudflared on *their* laptop, where 7844 is open and
+a quick tunnel needs no account at all. Running the tunnel on their side is
+usually less work than running it on this one.
+
+## Reading a failed tunnel URL
+
+Three failures look alike from the outside and mean different things:
+
+- **HTTP 530** — the agent never registered a connection. Read the agent's own
+  log; this is the port-blocked case above, not a fault in the exposed service.
+- **HTTP 502** — the tunnel is up but nothing is listening on the local port.
+  Start the service.
+- **`connect_rejected` / HTTP 000** — the CONNECT failed. The proxy reports this
+  as "denied by policy **or could not reach the destination**", and the second
+  half is much the more common cause: a tunnel whose agent has stopped leaves a
+  dead hostname that fails exactly this way. Do not report a policy block on
+  this evidence alone — confirm the agent is still running first.
 
 ## Verifying it actually works
 
@@ -106,10 +137,8 @@ Then check the tunnel end to end rather than trusting that:
 curl -s -o /dev/null -w "%{http_code}\n" https://<public-url>/
 ```
 
-- **200** — working.
-- **502** — the tunnel is up but nothing is listening on the local port. Start
-  the service; this is not a tunnel fault.
-- **connect_rejected / 000** — egress policy, per above.
+A 200 means working; anything else is covered by **Reading a failed tunnel URL**
+above.
 
 `ngrok` is not a TTY program, so redirecting its output is safe. Do not
 generalise that to the nested `claude` process, whose stdout must never be
